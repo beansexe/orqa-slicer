@@ -1,0 +1,101 @@
+diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
+index 756775a4..7b8c25d4 100644
+--- a/src/slic3r/GUI/GUI_App.cpp
++++ b/src/slic3r/GUI/GUI_App.cpp
+@@ -6,6 +6,10 @@
+ #include "libslic3r/Technologies.hpp"
+ #include "libslic3r/Platform.hpp"
+ #include "GUI_App.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/BambuHomepageStatus.hpp"
++#include "VendorAccounts/RestoredAccountSessions.hpp"
++#endif
+ #include "Shortcuts.hpp"
+ #include "DeviceCore/DevConfigUtil.h"
+ #include "BindDialog.hpp"
+@@ -1109,11 +1113,18 @@ void GUI_App::post_init()
+             }
+ 
+             this->check_new_version_sf();
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            if (m_agent) {
++                restore_account_sessions(*m_agent, app_config->get_stealth_mode(),
++                    [this](const std::string& provider) { request_user_handle(0, provider); });
++            }
++#else
+             const auto cloud_provider = get_printer_cloud_provider();
+             if (is_user_login(cloud_provider) && !app_config->get_stealth_mode()) {
+               // this->check_privacy_version(0);
+               request_user_handle(0, cloud_provider);
+             }
++#endif
+         });
+     }
+ 
+@@ -2254,6 +2265,10 @@ void GUI_App::init_networking_callbacks()
+             if (is_closing()) {
+                 return;
+             }
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            BOOST_LOG_TRIVIAL(info) << "cloud server callback: provider=" << event.provider
++                                    << ", return_code=" << return_code << ", reason_code=" << reason_code;
++#endif
+             if (return_code == 5) {
+                 GUI::wxGetApp().CallAfter([this, provider = event.provider] {
+                     BOOST_LOG_TRIVIAL(info) << "logout: login expired";
+@@ -5141,6 +5156,21 @@ void GUI_App::request_login(bool show_user_info, const std::string& provider/* =
+ void GUI_App::get_login_info(const std::string& provider/* = ORCA_CLOUD_PROVIDER*/)
+ {
+     if (m_agent) {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++        if (provider == BBL_CLOUD_PROVIDER) {
++            // The SDK's login-configuration payload is not a homepage status contract.
++            // Use the same native session state as the accounts dialog; polling is read-only.
++            const bool signed_in = m_agent->is_user_login(provider);
++            const std::string status = build_bambu_homepage_status(signed_in,
++                signed_in ? m_agent->get_user_name(provider) : std::string(),
++                signed_in ? m_agent->get_user_nickname(provider) : std::string(),
++                signed_in ? m_agent->get_user_avatar(provider) : std::string());
++            run_script(wxString::Format("window.postMessage(%s)", from_u8(status)));
++            if (WebViewPanel* home = WebViewPanel::if_built())
++                home->SetLoginPanelVisibility(true);
++            return;
++        }
++#endif
+         if (m_agent->is_user_login(provider)) {
+             std::string login_cmd = m_agent->build_login_cmd(provider);
+             wxString strJS = wxString::Format("window.postMessage(%s)", from_u8(login_cmd));
+@@ -5814,14 +5844,30 @@ void GUI_App::on_user_login_handle(wxCommandEvent &evt)
+     // during login warmup don't trigger immediate logout.
+     m_last_401_error_time = std::chrono::steady_clock::now();
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // Restored accounts connect independently of the currently selected printer profile.
++    if (const auto cloud_agent = m_agent->get_cloud_agent(provider)) {
++        const int result = cloud_agent->connect_server();
++        BOOST_LOG_TRIVIAL(info) << "cloud connect requested: provider=" << provider << ", result=" << result;
++    }
++#else
+     m_agent->connect_server();
++#endif
+     // get machine list
+     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
+     if (!dev) return;
+ 
+-    boost::thread update_thread = boost::thread([dev, provider] {
+-        dev->update_user_machine_list_info(provider);
+-    });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // DeviceManager has one live provider/generation; inactive account refreshes
++    // must not invalidate the selected printer provider's in-flight response.
++    if (provider == get_printer_cloud_provider()) {
++#endif
++        boost::thread update_thread = boost::thread([dev, provider] {
++            dev->update_user_machine_list_info(provider);
++        });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    }
++#endif
+ 
+     if (online_login && provider == ORCA_CLOUD_PROVIDER) {
+         // The steps below run synchronously on the UI thread (cloud plugin fetch and

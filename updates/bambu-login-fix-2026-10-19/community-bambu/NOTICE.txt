@@ -1,0 +1,15 @@
+This optional backend is built from persano/open-bamboo-networking, pinned by
+sources.lock.json, with the local integration.patch and helper headers in source.
+It is independent of Bambu Lab and is not vendor-endorsed. Source code is provided
+under AGPL-3.0-or-later; dependency notices are in licenses. Existing native slicer
+dependency notices also apply to the cached curl/OpenSSL/zlib libraries used here.
+
+This build forces cloud routing for printer MQTT/printing and the cloud camera
+route, isolates its session in orqa-community, protects session files with Windows
+DPAPI and drains background work before agent destruction. It does not install a
+system-wide camera filter or change the standard downloaded Bambu plug-in.
+
+The upstream interoperability code uses a Studio-compatible protocol identity,
+attestation metadata and app-certificate bootstrap. It does not confer official
+vendor authorization; server/firmware changes can break operation. Real account,
+printer control and camera functionality require user testing.

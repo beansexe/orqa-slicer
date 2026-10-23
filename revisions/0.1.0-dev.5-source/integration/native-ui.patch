@@ -1,0 +1,226 @@
+diff --git a/src/slic3r/CMakeLists.txt b/src/slic3r/CMakeLists.txt
+index de3b6956..524d0d1c 100644
+--- a/src/slic3r/CMakeLists.txt
++++ b/src/slic3r/CMakeLists.txt
+@@ -912,6 +912,16 @@ else ()
+ endif ()
+ target_include_directories(libslic3r_gui PRIVATE Utils ${CMAKE_CURRENT_BINARY_DIR})
+ 
++option(ORCA_DUAL_VENDOR_ACCOUNTS "Enable the Bambu/Flashforge accounts preview" OFF)
++if (ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_sources(libslic3r_gui PRIVATE
++        GUI/VendorAccounts/FlashforgeAccount.cpp
++        GUI/VendorAccounts/VendorAccountsDialog.cpp
++    )
++    target_compile_definitions(libslic3r_gui PRIVATE ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_link_libraries(libslic3r_gui ${CMAKE_DL_LIBS})
++endif()
++
+ if (WIN32)
+     target_include_directories(libslic3r_gui SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/WebView2/include)
+     target_link_libraries(libslic3r_gui Advapi32)
+@@ -919,6 +929,20 @@ endif()
+ 
+ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SLIC3R_GUI_SOURCES})
+ 
++if (ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_sources(libslic3r_gui PRIVATE
++        GUI/VendorAccounts/printers/PrinterCatalog.cpp
++        GUI/VendorAccounts/printers/PrinterPickerDialog.cpp
++        GUI/VendorAccounts/devices/FlashforgeDeviceStatus.cpp
++        GUI/VendorAccounts/devices/FlashforgeDevicePanel.cpp
++        GUI/VendorAccounts/devices/FlashforgeCloudSendDialog.cpp
++        GUI/VendorAccounts/FlashforgeAccountCloud.cpp
++        GUI/VendorAccounts/printing/FlashforgeCloudConnection.cpp
++        GUI/VendorAccounts/printing/FlashforgeCloudPrint.cpp
++        GUI/VendorAccounts/printing/FlashforgeArchiveInspector.cpp
++    )
++endif()
++
+ encoding_check(libslic3r_gui)
+ 
+ # Only BuildCommit.cpp includes the generated header, plus BaseException.cpp on
+diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
+index 756775a4..7b8c25d4 100644
+--- a/src/slic3r/GUI/GUI_App.cpp
++++ b/src/slic3r/GUI/GUI_App.cpp
+@@ -6,6 +6,10 @@
+ #include "libslic3r/Technologies.hpp"
+ #include "libslic3r/Platform.hpp"
+ #include "GUI_App.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/BambuHomepageStatus.hpp"
++#include "VendorAccounts/RestoredAccountSessions.hpp"
++#endif
+ #include "Shortcuts.hpp"
+ #include "DeviceCore/DevConfigUtil.h"
+ #include "BindDialog.hpp"
+@@ -1109,11 +1113,18 @@ void GUI_App::post_init()
+             }
+ 
+             this->check_new_version_sf();
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            if (m_agent) {
++                restore_account_sessions(*m_agent, app_config->get_stealth_mode(),
++                    [this](const std::string& provider) { request_user_handle(0, provider); });
++            }
++#else
+             const auto cloud_provider = get_printer_cloud_provider();
+             if (is_user_login(cloud_provider) && !app_config->get_stealth_mode()) {
+               // this->check_privacy_version(0);
+               request_user_handle(0, cloud_provider);
+             }
++#endif
+         });
+     }
+ 
+@@ -2254,6 +2265,10 @@ void GUI_App::init_networking_callbacks()
+             if (is_closing()) {
+                 return;
+             }
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            BOOST_LOG_TRIVIAL(info) << "cloud server callback: provider=" << event.provider
++                                    << ", return_code=" << return_code << ", reason_code=" << reason_code;
++#endif
+             if (return_code == 5) {
+                 GUI::wxGetApp().CallAfter([this, provider = event.provider] {
+                     BOOST_LOG_TRIVIAL(info) << "logout: login expired";
+@@ -5141,6 +5156,21 @@ void GUI_App::request_login(bool show_user_info, const std::string& provider/* =
+ void GUI_App::get_login_info(const std::string& provider/* = ORCA_CLOUD_PROVIDER*/)
+ {
+     if (m_agent) {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++        if (provider == BBL_CLOUD_PROVIDER) {
++            // The SDK's login-configuration payload is not a homepage status contract.
++            // Use the same native session state as the accounts dialog; polling is read-only.
++            const bool signed_in = m_agent->is_user_login(provider);
++            const std::string status = build_bambu_homepage_status(signed_in,
++                signed_in ? m_agent->get_user_name(provider) : std::string(),
++                signed_in ? m_agent->get_user_nickname(provider) : std::string(),
++                signed_in ? m_agent->get_user_avatar(provider) : std::string());
++            run_script(wxString::Format("window.postMessage(%s)", from_u8(status)));
++            if (WebViewPanel* home = WebViewPanel::if_built())
++                home->SetLoginPanelVisibility(true);
++            return;
++        }
++#endif
+         if (m_agent->is_user_login(provider)) {
+             std::string login_cmd = m_agent->build_login_cmd(provider);
+             wxString strJS = wxString::Format("window.postMessage(%s)", from_u8(login_cmd));
+@@ -5814,14 +5844,30 @@ void GUI_App::on_user_login_handle(wxCommandEvent &evt)
+     // during login warmup don't trigger immediate logout.
+     m_last_401_error_time = std::chrono::steady_clock::now();
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // Restored accounts connect independently of the currently selected printer profile.
++    if (const auto cloud_agent = m_agent->get_cloud_agent(provider)) {
++        const int result = cloud_agent->connect_server();
++        BOOST_LOG_TRIVIAL(info) << "cloud connect requested: provider=" << provider << ", result=" << result;
++    }
++#else
+     m_agent->connect_server();
++#endif
+     // get machine list
+     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
+     if (!dev) return;
+ 
+-    boost::thread update_thread = boost::thread([dev, provider] {
+-        dev->update_user_machine_list_info(provider);
+-    });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // DeviceManager has one live provider/generation; inactive account refreshes
++    // must not invalidate the selected printer provider's in-flight response.
++    if (provider == get_printer_cloud_provider()) {
++#endif
++        boost::thread update_thread = boost::thread([dev, provider] {
++            dev->update_user_machine_list_info(provider);
++        });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    }
++#endif
+ 
+     if (online_login && provider == ORCA_CLOUD_PROVIDER) {
+         // The steps below run synchronously on the UI thread (cloud plugin fetch and
+diff --git a/src/slic3r/GUI/MainFrame.cpp b/src/slic3r/GUI/MainFrame.cpp
+index bb5ffc87..e4e65d14 100644
+--- a/src/slic3r/GUI/MainFrame.cpp
++++ b/src/slic3r/GUI/MainFrame.cpp
+@@ -1,4 +1,7 @@
+ #include "MainFrame.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/VendorAccountsDialog.hpp"
++#endif
+ 
+ #include <wx/event.h>
+ #include "slic3r/GUI/Event.hpp"
+@@ -22,6 +25,10 @@
+ #include "slic3r/GUI/Monitor.hpp"
+ #include "slic3r/GUI/PrinterWebView.hpp"
+ #include "slic3r/GUI/MultiMachinePage.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/devices/FlashforgeDevicePanel.hpp"
++#include "VendorAccounts/printers/PrinterPickerDialog.hpp"
++#endif
+ #include "slic3r/GUI/CalibrationPanel.hpp"
+ #include "slic3r/GUI/ReleaseNote.hpp"
+ #include "slic3r/GUI/GUI.hpp"
+@@ -1261,6 +1268,11 @@ void MainFrame::update_edge_panels()
+ void MainFrame::shutdown()
+ {
+     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "MainFrame::shutdown enter";
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // A Device refresh can rotate the remembered token. Complete it while
++    // AppConfig and the credential store are still available to the UI thread.
++    drain_flashforge_refresh();
++#endif
+     m_idle.stop();
+     if (ProjectPanel* project = ProjectPanel::if_built())
+         project->shutdown();
+@@ -1524,6 +1536,17 @@ void MainFrame::init_tabpanel() {
+     m_lazy_pages.push_back(m_monitor_page);
+     m_tabpanel->AddPage(TAB_ID_MONITOR, m_monitor_page, _L("Device"), "tab_monitor_active");
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (wxGetApp().is_editor()) {
++        FlashforgeDeviceCallbacks callbacks;
++        callbacks.read_snapshot = [] { return flashforge_account_snapshot(); };
++        callbacks.refresh = [] { return refresh_flashforge_devices(); };
++        callbacks.open_accounts = [this] { show_vendor_accounts(this); };
++        auto* flashforge_page = create_flashforge_device_panel(m_tabpanel, std::move(callbacks));
++        m_tabpanel->AddPage("flashforge_device", flashforge_page, _L("Flashforge"), "tab_monitor_active");
++    }
++#endif
++
+     m_printer_view_page = new LazyPage<PrinterWebView>(m_tabpanel, TAB_ID_MONITOR_WEB, 50, [this](wxWindow* parent) {
+         auto* view = new PrinterWebView(parent);
+         if (!m_printer_url.empty())
+@@ -3464,6 +3487,17 @@ void MainFrame::init_menubar_as_editor()
+     wxMenu* parent_menu = m_topbar->GetTopMenu();
+ #endif
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    append_menu_item(parent_menu, wxID_ANY, _L("Choose printer…"),
++        _L("Choose a Bambu or Flashforge printer and its nozzle profile"),
++        [this](wxCommandEvent&) {
++            show_printer_picker(this, flashforge_picker_snapshot(),
++                [this] { show_vendor_accounts(this); },
++                [](const std::string& id) { open_flashforge_device(id); },
++                [this] { select_tab(TAB_ID_MONITOR); });
++        }, "", nullptr);
++#endif
++
+ #ifdef __APPLE__
+     wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
+     append_menu_item(
+@@ -3480,6 +3514,11 @@ void MainFrame::init_menubar_as_editor()
+ #endif
+     // Help menu
+     auto helpMenu = generate_help_menu();
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    append_menu_item(parent_menu, wxID_ANY, _L("Printer accounts"),
++        _L("Manage independent Bambu and Flashforge accounts"),
++        [this](wxCommandEvent&) { show_vendor_accounts(this); }, "", nullptr);
++#endif
+ 
+ #ifndef __APPLE__
+     m_topbar->SetFileMenu(fileMenu);

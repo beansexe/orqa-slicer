@@ -1,0 +1,83 @@
+diff --git a/src/slic3r/GUI/MainFrame.cpp b/src/slic3r/GUI/MainFrame.cpp
+index 471384f..e4e65d1 100644
+--- a/src/slic3r/GUI/MainFrame.cpp
++++ b/src/slic3r/GUI/MainFrame.cpp
+@@ -25,6 +25,10 @@
+ #include "slic3r/GUI/Monitor.hpp"
+ #include "slic3r/GUI/PrinterWebView.hpp"
+ #include "slic3r/GUI/MultiMachinePage.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/devices/FlashforgeDevicePanel.hpp"
++#include "VendorAccounts/printers/PrinterPickerDialog.hpp"
++#endif
+ #include "slic3r/GUI/CalibrationPanel.hpp"
+ #include "slic3r/GUI/ReleaseNote.hpp"
+ #include "slic3r/GUI/GUI.hpp"
+@@ -1264,6 +1268,11 @@ void MainFrame::update_edge_panels()
+ void MainFrame::shutdown()
+ {
+     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "MainFrame::shutdown enter";
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // A Device refresh can rotate the remembered token. Complete it while
++    // AppConfig and the credential store are still available to the UI thread.
++    drain_flashforge_refresh();
++#endif
+     m_idle.stop();
+     if (ProjectPanel* project = ProjectPanel::if_built())
+         project->shutdown();
+@@ -1527,6 +1536,17 @@ void MainFrame::init_tabpanel() {
+     m_lazy_pages.push_back(m_monitor_page);
+     m_tabpanel->AddPage(TAB_ID_MONITOR, m_monitor_page, _L("Device"), "tab_monitor_active");
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (wxGetApp().is_editor()) {
++        FlashforgeDeviceCallbacks callbacks;
++        callbacks.read_snapshot = [] { return flashforge_account_snapshot(); };
++        callbacks.refresh = [] { return refresh_flashforge_devices(); };
++        callbacks.open_accounts = [this] { show_vendor_accounts(this); };
++        auto* flashforge_page = create_flashforge_device_panel(m_tabpanel, std::move(callbacks));
++        m_tabpanel->AddPage("flashforge_device", flashforge_page, _L("Flashforge"), "tab_monitor_active");
++    }
++#endif
++
+     m_printer_view_page = new LazyPage<PrinterWebView>(m_tabpanel, TAB_ID_MONITOR_WEB, 50, [this](wxWindow* parent) {
+         auto* view = new PrinterWebView(parent);
+         if (!m_printer_url.empty())
+@@ -3467,6 +3487,17 @@ void MainFrame::init_menubar_as_editor()
+     wxMenu* parent_menu = m_topbar->GetTopMenu();
+ #endif
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    append_menu_item(parent_menu, wxID_ANY, _L("Choose printer…"),
++        _L("Choose a Bambu or Flashforge printer and its nozzle profile"),
++        [this](wxCommandEvent&) {
++            show_printer_picker(this, flashforge_picker_snapshot(),
++                [this] { show_vendor_accounts(this); },
++                [](const std::string& id) { open_flashforge_device(id); },
++                [this] { select_tab(TAB_ID_MONITOR); });
++        }, "", nullptr);
++#endif
++
+ #ifdef __APPLE__
+     wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
+     append_menu_item(
+diff --git a/src/slic3r/CMakeLists.txt b/src/slic3r/CMakeLists.txt
+index b73ade2..74893c3 100644
+--- a/src/slic3r/CMakeLists.txt
++++ b/src/slic3r/CMakeLists.txt
+@@ -929,6 +929,15 @@ endif()
+ 
+ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SLIC3R_GUI_SOURCES})
+ 
++if (ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_sources(libslic3r_gui PRIVATE
++        GUI/VendorAccounts/printers/PrinterCatalog.cpp
++        GUI/VendorAccounts/printers/PrinterPickerDialog.cpp
++        GUI/VendorAccounts/devices/FlashforgeDeviceStatus.cpp
++        GUI/VendorAccounts/devices/FlashforgeDevicePanel.cpp
++    )
++endif()
++
+ encoding_check(libslic3r_gui)
+ 
+ # Only BuildCommit.cpp includes the generated header, plus BaseException.cpp on

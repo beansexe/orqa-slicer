@@ -1,0 +1,557 @@
+diff --git a/src/OrcaSlicer.cpp b/src/OrcaSlicer.cpp
+index 1b764fe4..14df3f54 100644
+--- a/src/OrcaSlicer.cpp
++++ b/src/OrcaSlicer.cpp
+@@ -618,6 +618,9 @@ static int load_key_values_from_json(const std::string &file, std::map<std::stri
+             else if (boost::iequals(it.key(), BBL_JSON_KEY_NAME)) {
+                 key_values.emplace(BBL_JSON_KEY_NAME, it.value());
+             }
++            else if (boost::iequals(it.key(), BBL_JSON_KEY_TYPE)) {
++                key_values.emplace(BBL_JSON_KEY_TYPE, it.value());
++            }
+         }
+     }
+     catch (const std::ifstream::failure &err)  {
+@@ -1672,7 +1675,12 @@ int CLI::run(int argc, char **argv)
+                 // BBS: adjust whebackup
+                 //LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig|LoadStrategy::AddDefaultInstances;
+                 //if (load_aux) strategy = strategy | LoadStrategy::LoadAuxiliary;
+-                model = Model::read_from_file(file, &config, &config_substitutions, strategy, &plate_data_src, &project_presets, &is_bbl_3mf, &file_version, nullptr, nullptr, nullptr, plate_to_slice);
++                // SolidWorks bridge: retain STEP geometry until Orca's own mesher.
++                // Match the GUI's high quality defaults; the CLI has no mesh dialog.
++                if (boost::algorithm::iends_with(file, ".step") || boost::algorithm::iends_with(file, ".stp"))
++                    model = Model::read_from_step(file, strategy, nullptr, nullptr, nullptr, 0.003, 0.5, false);
++                else
++                    model = Model::read_from_file(file, &config, &config_substitutions, strategy, &plate_data_src, &project_presets, &is_bbl_3mf, &file_version, nullptr, nullptr, nullptr, plate_to_slice);
+                 if (is_bbl_3mf)
+                 {
+                     if (!first_file)
+@@ -7249,6 +7257,30 @@ int CLI::run(int argc, char **argv)
+         const BBLPrinterAgent bbl_agent;
+ #endif /* SLIC3R_GUI */
+ 
++        // A from-scratch CLI slice can use any vendor. The legacy loader only
++        // searched BBL/machine_full, leaving Flashforge (and normal BBL/machine)
++        // archives without the catalog ID required by cloud archive validation.
++        if (printer_model_id.empty()) {
++            const auto* selected_model = m_print_config.option<ConfigOptionString>("printer_model");
++            if (selected_model && !selected_model->value.empty() &&
++                selected_model->value.find_first_of("/\\") == std::string::npos) {
++                const auto catalog = boost::filesystem::path(resources_dir()) / "profiles";
++                std::set<std::string> matching_ids;
++                for (const auto& vendor : boost::filesystem::directory_iterator(catalog)) {
++                    if (!boost::filesystem::is_directory(vendor.path())) continue;
++                    for (const auto* folder : {"machine", "machine_full"}) {
++                        const auto definition = vendor.path() / folder / (selected_model->value + ".json");
++                        if (!boost::filesystem::is_regular_file(definition)) continue;
++                        std::map<std::string, std::string> metadata;
++                        load_key_values_from_json(definition.string(), metadata);
++                        if (metadata["type"] == "machine_model" && metadata["name"] == selected_model->value && !metadata["model_id"].empty())
++                            matching_ids.insert(metadata["model_id"]);
++                    }
++                }
++                if (matching_ids.size() == 1) printer_model_id = *matching_ids.begin();
++            }
++        }
++
+         for (int i = 0; i < plate_data_list.size(); i++) {
+             PlateData *plate_data = plate_data_list[i];
+             bool skip_this_plate = ((plate_to_slice != 0) && (plate_to_slice != (i + 1)))?true:false;
+diff --git a/src/slic3r/CMakeLists.txt b/src/slic3r/CMakeLists.txt
+index de3b6956..8d738fe4 100644
+--- a/src/slic3r/CMakeLists.txt
++++ b/src/slic3r/CMakeLists.txt
+@@ -912,6 +912,17 @@ else ()
+ endif ()
+ target_include_directories(libslic3r_gui PRIVATE Utils ${CMAKE_CURRENT_BINARY_DIR})
+ 
++option(ORCA_DUAL_VENDOR_ACCOUNTS "Enable the Bambu/Flashforge accounts preview" OFF)
++if (ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_sources(libslic3r_gui PRIVATE
++        GUI/VendorAccounts/BambuCloudBackend.cpp
++        GUI/VendorAccounts/FlashforgeAccount.cpp
++        GUI/VendorAccounts/VendorAccountsDialog.cpp
++    )
++    target_compile_definitions(libslic3r_gui PRIVATE ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_link_libraries(libslic3r_gui ${CMAKE_DL_LIBS})
++endif()
++
+ if (WIN32)
+     target_include_directories(libslic3r_gui SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/WebView2/include)
+     target_link_libraries(libslic3r_gui Advapi32)
+@@ -919,6 +930,25 @@ endif()
+ 
+ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SLIC3R_GUI_SOURCES})
+ 
++if (ORCA_DUAL_VENDOR_ACCOUNTS)
++    target_sources(libslic3r_gui PRIVATE
++        GUI/VendorAccounts/printers/PrinterCatalog.cpp
++        GUI/VendorAccounts/printers/PrinterPickerDialog.cpp
++        GUI/VendorAccounts/printers/MultiPrintWorkspace.cpp
++        GUI/VendorAccounts/printing/FastStartWarning.cpp
++        GUI/VendorAccounts/solidworks/SolidWorksBridge.cpp
++        GUI/VendorAccounts/devices/FlashforgeDeviceStatus.cpp
++        GUI/VendorAccounts/devices/FlashforgeDevicePanel.cpp
++        GUI/VendorAccounts/devices/FlashforgeCloudSendDialog.cpp
++        GUI/VendorAccounts/FlashforgeAccountCloud.cpp
++        GUI/VendorAccounts/printing/FlashforgeCloudConnection.cpp
++        GUI/VendorAccounts/printing/FlashforgeCloudPrint.cpp
++        GUI/VendorAccounts/printing/FlashforgeArchiveInspector.cpp
++        GUI/VendorAccounts/firmware/FirmwareNotices.cpp
++        GUI/VendorAccounts/firmware/FirmwareNotifications.cpp
++    )
++endif()
++
+ encoding_check(libslic3r_gui)
+ 
+ # Only BuildCommit.cpp includes the generated header, plus BaseException.cpp on
+diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
+index 756775a4..5c0a531e 100644
+--- a/src/slic3r/GUI/GUI_App.cpp
++++ b/src/slic3r/GUI/GUI_App.cpp
+@@ -6,6 +6,11 @@
+ #include "libslic3r/Technologies.hpp"
+ #include "libslic3r/Platform.hpp"
+ #include "GUI_App.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/BambuHomepageStatus.hpp"
++#include "VendorAccounts/RestoredAccountSessions.hpp"
++#include "VendorAccounts/firmware/FirmwareNotifications.hpp"
++#endif
+ #include "Shortcuts.hpp"
+ #include "DeviceCore/DevConfigUtil.h"
+ #include "BindDialog.hpp"
+@@ -1109,11 +1114,18 @@ void GUI_App::post_init()
+             }
+ 
+             this->check_new_version_sf();
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            if (m_agent) {
++                restore_account_sessions(*m_agent, app_config->get_stealth_mode(),
++                    [this](const std::string& provider) { request_user_handle(0, provider); });
++            }
++#else
+             const auto cloud_provider = get_printer_cloud_provider();
+             if (is_user_login(cloud_provider) && !app_config->get_stealth_mode()) {
+               // this->check_privacy_version(0);
+               request_user_handle(0, cloud_provider);
+             }
++#endif
+         });
+     }
+ 
+@@ -2254,6 +2266,10 @@ void GUI_App::init_networking_callbacks()
+             if (is_closing()) {
+                 return;
+             }
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            BOOST_LOG_TRIVIAL(info) << "cloud server callback: provider=" << event.provider
++                                    << ", return_code=" << return_code << ", reason_code=" << reason_code;
++#endif
+             if (return_code == 5) {
+                 GUI::wxGetApp().CallAfter([this, provider = event.provider] {
+                     BOOST_LOG_TRIVIAL(info) << "logout: login expired";
+@@ -2430,6 +2446,9 @@ void GUI_App::init_networking_callbacks()
+                     } else {
+                         obj->parse_json("cloud", msg, true);
+                     }
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++                    Slic3r::GUI::observe_bambu_firmware(*obj, provider, msg);
++#endif
+                 }
+ 
+                 if (GUI::wxGetApp().plater())
+@@ -5141,6 +5160,21 @@ void GUI_App::request_login(bool show_user_info, const std::string& provider/* =
+ void GUI_App::get_login_info(const std::string& provider/* = ORCA_CLOUD_PROVIDER*/)
+ {
+     if (m_agent) {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++        if (provider == BBL_CLOUD_PROVIDER) {
++            // The SDK's login-configuration payload is not a homepage status contract.
++            // Use the same native session state as the accounts dialog; polling is read-only.
++            const bool signed_in = m_agent->is_user_login(provider);
++            const std::string status = build_bambu_homepage_status(signed_in,
++                signed_in ? m_agent->get_user_name(provider) : std::string(),
++                signed_in ? m_agent->get_user_nickname(provider) : std::string(),
++                signed_in ? m_agent->get_user_avatar(provider) : std::string());
++            run_script(wxString::Format("window.postMessage(%s)", from_u8(status)));
++            if (WebViewPanel* home = WebViewPanel::if_built())
++                home->SetLoginPanelVisibility(true);
++            return;
++        }
++#endif
+         if (m_agent->is_user_login(provider)) {
+             std::string login_cmd = m_agent->build_login_cmd(provider);
+             wxString strJS = wxString::Format("window.postMessage(%s)", from_u8(login_cmd));
+@@ -5814,14 +5848,30 @@ void GUI_App::on_user_login_handle(wxCommandEvent &evt)
+     // during login warmup don't trigger immediate logout.
+     m_last_401_error_time = std::chrono::steady_clock::now();
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // Restored accounts connect independently of the currently selected printer profile.
++    if (const auto cloud_agent = m_agent->get_cloud_agent(provider)) {
++        const int result = cloud_agent->connect_server();
++        BOOST_LOG_TRIVIAL(info) << "cloud connect requested: provider=" << provider << ", result=" << result;
++    }
++#else
+     m_agent->connect_server();
++#endif
+     // get machine list
+     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
+     if (!dev) return;
+ 
+-    boost::thread update_thread = boost::thread([dev, provider] {
+-        dev->update_user_machine_list_info(provider);
+-    });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // DeviceManager has one live provider/generation; inactive account refreshes
++    // must not invalidate the selected printer provider's in-flight response.
++    if (provider == get_printer_cloud_provider()) {
++#endif
++        boost::thread update_thread = boost::thread([dev, provider] {
++            dev->update_user_machine_list_info(provider);
++        });
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    }
++#endif
+ 
+     if (online_login && provider == ORCA_CLOUD_PROVIDER) {
+         // The steps below run synchronously on the UI thread (cloud plugin fetch and
+@@ -6446,6 +6496,16 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
+             // once per connection episode.
+             if (!m_show_error_msgdlg && !m_unsigned_plugin_warning_shown) {
+                 m_unsigned_plugin_warning_shown = true;
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++                MessageDialog msg_dlg(
++                    nullptr,
++                    _L("Bambu's network plug-in rejected this operation because it requires an authorized client. "
++                       "Being signed in does not enable every printer control. Status and light controls may still work.\n\n"
++                       "To keep using cloud access, change the loaded filament in Bambu Studio or Bambu Handy, "
++                       "then refresh the printer status here. This build cannot perform that restricted change directly.\n\n"
++                       "You can keep the printer in cloud mode."),
++                    _L("Bambu Cloud Control Restriction"), wxAPPLY | wxOK);
++#else
+                 MessageDialog
+                     msg_dlg(nullptr,
+                             _L("To use OrcaSlicer with Bambu Lab printers, you need to enable LAN mode and Developer mode on your printer.\n\n"
+@@ -6455,6 +6515,7 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
+                                "Developer mode allows the printer to work exclusively through local network access, "
+                                "enabling full functionality with OrcaSlicer."),
+                             _L("Network Plug-in Restriction"), wxAPPLY | wxOK);
++#endif
+                 m_show_error_msgdlg = true;
+                 msg_dlg.ShowModal();
+                 m_show_error_msgdlg = false;
+diff --git a/src/slic3r/GUI/MainFrame.cpp b/src/slic3r/GUI/MainFrame.cpp
+index bb5ffc87..f1cdffbf 100644
+--- a/src/slic3r/GUI/MainFrame.cpp
++++ b/src/slic3r/GUI/MainFrame.cpp
+@@ -1,4 +1,10 @@
+ #include "MainFrame.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/VendorAccountsDialog.hpp"
++#include "VendorAccounts/printers/MultiPrintWorkspace.hpp"
++#include "VendorAccounts/solidworks/SolidWorksBridge.hpp"
++#include <wx/tglbtn.h>
++#endif
+ 
+ #include <wx/event.h>
+ #include "slic3r/GUI/Event.hpp"
+@@ -22,6 +28,10 @@
+ #include "slic3r/GUI/Monitor.hpp"
+ #include "slic3r/GUI/PrinterWebView.hpp"
+ #include "slic3r/GUI/MultiMachinePage.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/devices/FlashforgeDevicePanel.hpp"
++#include "VendorAccounts/printers/PrinterPickerDialog.hpp"
++#endif
+ #include "slic3r/GUI/CalibrationPanel.hpp"
+ #include "slic3r/GUI/ReleaseNote.hpp"
+ #include "slic3r/GUI/GUI.hpp"
+@@ -1261,6 +1271,12 @@ void MainFrame::update_edge_panels()
+ void MainFrame::shutdown()
+ {
+     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "MainFrame::shutdown enter";
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // A Device refresh can rotate the remembered token. Complete it while
++    // AppConfig and the credential store are still available to the UI thread.
++    stop_solidworks_bridge();
++    drain_flashforge_refresh();
++#endif
+     m_idle.stop();
+     if (ProjectPanel* project = ProjectPanel::if_built())
+         project->shutdown();
+@@ -1524,6 +1540,18 @@ void MainFrame::init_tabpanel() {
+     m_lazy_pages.push_back(m_monitor_page);
+     m_tabpanel->AddPage(TAB_ID_MONITOR, m_monitor_page, _L("Device"), "tab_monitor_active");
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (wxGetApp().is_editor()) {
++        start_solidworks_bridge(this);
++        FlashforgeDeviceCallbacks callbacks;
++        callbacks.read_snapshot = [] { return flashforge_account_snapshot(); };
++        callbacks.refresh = [] { return refresh_flashforge_devices(); };
++        callbacks.open_accounts = [this] { show_vendor_accounts(this); };
++        auto* flashforge_page = create_flashforge_device_panel(m_tabpanel, std::move(callbacks));
++        m_tabpanel->AddPage("flashforge_device", flashforge_page, _L("Flashforge"), "tab_monitor_active");
++    }
++#endif
++
+     m_printer_view_page = new LazyPage<PrinterWebView>(m_tabpanel, TAB_ID_MONITOR_WEB, 50, [this](wxWindow* parent) {
+         auto* view = new PrinterWebView(parent);
+         if (!m_printer_url.empty())
+@@ -2100,6 +2128,7 @@ namespace {
+ const char* print_select_type_key(MainFrame::PrintSelectType type)
+ {
+     switch (type) {
++    case MainFrame::ePrintAllPrinters:    return "print_all_printers";
+     case MainFrame::ePrintAll:            return "print_all";
+     case MainFrame::ePrintPlate:          return "print_plate";
+     case MainFrame::eExportSlicedFile:    return "export_sliced_file";
+@@ -2118,6 +2147,7 @@ const char* print_select_type_key(MainFrame::PrintSelectType type)
+ wxString print_select_type_label(MainFrame::PrintSelectType type)
+ {
+     switch (type) {
++    case MainFrame::ePrintAllPrinters:    return _L("Print to all printers");
+     case MainFrame::ePrintAll:            return _L("Print all");
+     case MainFrame::ePrintPlate:          return _L("Print plate");
+     case MainFrame::eExportSlicedFile:    return _L("Export plate sliced file");
+@@ -2136,6 +2166,9 @@ wxString print_select_type_label(MainFrame::PrintSelectType type)
+ std::vector<MainFrame::PrintSelectType> MainFrame::available_print_actions() const
+ {
+     std::vector<PrintSelectType> actions;
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (multi_print_enabled()) actions.push_back(ePrintAllPrinters);
++#endif
+     const auto preset_bundle      = wxGetApp().preset_bundle;
+     const bool use_printer_agents = wxGetApp().app_config->get_bool("use_printer_agents");
+ 
+@@ -2258,6 +2291,19 @@ wxBoxSizer* MainFrame::create_side_tools()
+     sizer->Add(slice_panel);
+     sizer->Add(FromDIP(15), 0, 0, 0, 0);
+     sizer->Add(print_panel);
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    auto* multi_print = new wxToggleButton(this, wxID_ANY, _L("Multi-print"));
++    multi_print->SetToolTip(_L("One source plate, independent settings and slices for each printer"));
++    multi_print->Bind(wxEVT_UPDATE_UI, [multi_print](wxUpdateUIEvent&) {
++        multi_print->SetValue(multi_print_enabled());
++    });
++    multi_print->Bind(wxEVT_TOGGLEBUTTON, [this, multi_print](wxCommandEvent&) {
++        set_multi_print_enabled(m_plater, multi_print->GetValue());
++        const auto actions = available_print_actions();
++        select_print_action(actions.empty() ? ePrintPlate : actions.front());
++    });
++    sizer->Add(multi_print, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, FromDIP(12));
++#endif
+     sizer->Add(FromDIP(19), 0, 0, 0, 0);
+ 
+     sizer->Layout();
+@@ -2335,6 +2381,9 @@ wxBoxSizer* MainFrame::create_side_tools()
+ 
+     m_print_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
+         {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++            if (m_print_select == ePrintAllPrinters) { print_to_all_printers(); return; }
++#endif
+             //this->m_plater->select_view_3D("Preview");
+             if (m_print_select == ePrintAll || m_print_select == ePrintPlate || m_print_select == ePrintMultiMachine)
+             {
+@@ -2488,6 +2537,10 @@ bool MainFrame::get_enable_slice_status()
+ 
+ bool MainFrame::get_enable_print_status()
+ {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (m_print_select == ePrintAllPrinters)
++        return multi_print_enabled() && m_plater && !m_plater->is_background_process_slicing() && !m_plater->model().objects.empty();
++#endif
+     bool enable = true;
+ 
+     PartPlateList &part_plate_list = m_plater->get_partplate_list();
+@@ -3464,6 +3517,17 @@ void MainFrame::init_menubar_as_editor()
+     wxMenu* parent_menu = m_topbar->GetTopMenu();
+ #endif
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    append_menu_item(parent_menu, wxID_ANY, _L("Choose printer…"),
++        _L("Choose a Bambu or Flashforge printer and its nozzle profile"),
++        [this](wxCommandEvent&) {
++            show_printer_picker(this, flashforge_picker_snapshot(),
++                [this] { show_vendor_accounts(this); },
++                [](const std::string& id) { open_flashforge_device(id); },
++                [this] { select_tab(TAB_ID_MONITOR); });
++        }, "", nullptr);
++#endif
++
+ #ifdef __APPLE__
+     wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
+     append_menu_item(
+@@ -3480,6 +3544,11 @@ void MainFrame::init_menubar_as_editor()
+ #endif
+     // Help menu
+     auto helpMenu = generate_help_menu();
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    append_menu_item(parent_menu, wxID_ANY, _L("Printer accounts"),
++        _L("Manage independent Bambu and Flashforge accounts"),
++        [this](wxCommandEvent&) { show_vendor_accounts(this); }, "", nullptr);
++#endif
+ 
+ #ifndef __APPLE__
+     m_topbar->SetFileMenu(fileMenu);
+@@ -4329,6 +4398,10 @@ void MainFrame::set_print_button_to_default(PrintSelectType select_type)
+     if (get_remembered_print_select(remembered))
+         select_type = remembered;
+ 
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (multi_print_enabled()) select_type = ePrintAllPrinters;
++#endif
++
+     if (select_type == eUploadGcode)
+         return; // unsupported: no dropdown entry exists for this action
+ 
+diff --git a/src/slic3r/GUI/MainFrame.hpp b/src/slic3r/GUI/MainFrame.hpp
+index 6bd00b15..5aa6ac15 100644
+--- a/src/slic3r/GUI/MainFrame.hpp
++++ b/src/slic3r/GUI/MainFrame.hpp
+@@ -352,7 +352,8 @@ public:
+         eSendToPrinterAll    = 6,
+         eUploadGcode         = 7,
+         eExportAllSlicedFile = 8,
+-        ePrintMultiMachine   = 9
++        ePrintMultiMachine   = 9,
++        ePrintAllPrinters    = 10
+     };
+ 
+     void update_layout();
+diff --git a/src/slic3r/GUI/Plater.cpp b/src/slic3r/GUI/Plater.cpp
+index f87659cf..d7d752fe 100644
+--- a/src/slic3r/GUI/Plater.cpp
++++ b/src/slic3r/GUI/Plater.cpp
+@@ -1,3 +1,6 @@
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/printing/FastStartWarning.hpp"
++#endif
+ #include "Plater.hpp"
+ #include "../Utils/NetworkAgent.hpp"
+ #include "IPrinterAgent.hpp"
+@@ -20576,6 +20579,9 @@ void Plater::reslice_SLA_until_step(SLAPrintObjectStep step, const ModelObject &
+ }
+ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
+ {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (!VendorPrinting::confirm_fast_start_for_plate(this, plate_idx)) return;
++#endif
+     // if physical_printer is selected, send gcode for this printer
+     // DynamicPrintConfig* physical_printer_config = wxGetApp().preset_bundle->physical_printers.get_selected_printer_config();
+     DynamicPrintConfig* physical_printer_config = &Slic3r::GUI::wxGetApp().preset_bundle->printers.get_edited_preset().config;
+diff --git a/src/slic3r/GUI/SelectMachine.cpp b/src/slic3r/GUI/SelectMachine.cpp
+index a885dcd0..f2a59f14 100644
+--- a/src/slic3r/GUI/SelectMachine.cpp
++++ b/src/slic3r/GUI/SelectMachine.cpp
+@@ -1,3 +1,6 @@
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/printing/FastStartWarning.hpp"
++#endif
+ #include "SelectMachine.hpp"
+ #include "I18N.hpp"
+ 
+@@ -3570,6 +3573,9 @@ void SelectMachineDialog::navigate_to_timelapse_page()
+ 
+ void SelectMachineDialog::on_send_print()
+ {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (m_print_type == PrintFromType::FROM_NORMAL && !m_is_in_sending_mode && !VendorPrinting::confirm_fast_start_for_plate(this, m_print_plate_idx)) return;
++#endif
+     BOOST_LOG_TRIVIAL(info) << "print_job: on_ok to send";
+     m_is_canceled = false;
+     Enable_Send_Button(false);
+diff --git a/src/slic3r/GUI/SendMultiMachinePage.cpp b/src/slic3r/GUI/SendMultiMachinePage.cpp
+index acf4fe11..c303445c 100644
+--- a/src/slic3r/GUI/SendMultiMachinePage.cpp
++++ b/src/slic3r/GUI/SendMultiMachinePage.cpp
+@@ -1,3 +1,6 @@
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "VendorAccounts/printing/FastStartWarning.hpp"
++#endif
+ #include "SendMultiMachinePage.hpp"
+ #include "TaskManager.hpp"
+ #include "I18N.hpp"
+@@ -762,6 +765,9 @@ bool SendMultiMachinePage::get_ams_mapping_result(std::string &mapping_array_str
+ 
+ void SendMultiMachinePage::on_send(wxCommandEvent& event)
+ {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    if (!VendorPrinting::confirm_fast_start_for_plate(this, m_print_plate_idx)) return;
++#endif
+     event.Skip();
+     BOOST_LOG_TRIVIAL(info) << "SendMultiMachinePage: on_send";
+ 
+diff --git a/src/slic3r/Utils/BBLNetworkPlugin.cpp b/src/slic3r/Utils/BBLNetworkPlugin.cpp
+index bae9ce85..6428e559 100644
+--- a/src/slic3r/Utils/BBLNetworkPlugin.cpp
++++ b/src/slic3r/Utils/BBLNetworkPlugin.cpp
+@@ -1,5 +1,9 @@
+ #include "BBLNetworkPlugin.hpp"
+ #include "NetworkAgent.hpp"
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++#include "slic3r/GUI/VendorAccounts/BambuCloudBackend.hpp"
++#endif
++#include <filesystem>
+ 
+ #include <mutex>
+ #include <boost/filesystem/path.hpp>
+@@ -128,6 +132,9 @@ int BBLNetworkPlugin::initialize(bool using_backup, const std::string& version)
+         }
+     }
+ 
++#if defined(_MSC_VER) || defined(_WIN32)
++    bool bundled_community = false;
++#endif
+     // Load versioned library. In the normal plugins folder a bare series (02.08.01) resolves to
+     // whatever same-series build is actually on disk (see resolve_library_path); the backup
+     // folder keeps the exact versioned name.
+@@ -142,11 +149,17 @@ int BBLNetworkPlugin::initialize(bool using_backup, const std::string& version)
+                            : resolve_library_path(version);
+ 
+ #if defined(_MSC_VER) || defined(_WIN32)
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    const auto bundled_networking = community_bambu_library("bambu_networking.dll");
++    if (!bundled_networking.empty()) { library = bundled_networking; bundled_community = true; }
++#endif
+     wchar_t lib_wstr[256];
+     memset(lib_wstr, 0, sizeof(lib_wstr));
+     ::MultiByteToWideChar(CP_UTF8, NULL, library.c_str(), strlen(library.c_str())+1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
+-    m_networking_module = LoadLibrary(lib_wstr);
+-    if (!m_networking_module) {
++    m_networking_module = bundled_community
++        ? LoadLibraryExW(std::filesystem::u8path(library).c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
++        : LoadLibrary(lib_wstr);
++    if (!m_networking_module && !bundled_community) {
+         std::string library_path = get_libpath_in_current_directory(std::string(BAMBU_NETWORK_LIBRARY));
+         if (library_path.empty()) {
+             set_load_error(
+@@ -158,7 +171,9 @@ int BBLNetworkPlugin::initialize(bool using_backup, const std::string& version)
+         }
+         memset(lib_wstr, 0, sizeof(lib_wstr));
+         ::MultiByteToWideChar(CP_UTF8, NULL, library_path.c_str(), strlen(library_path.c_str())+1, lib_wstr, sizeof(lib_wstr) / sizeof(lib_wstr[0]));
+-        m_networking_module = LoadLibrary(lib_wstr);
++        m_networking_module = bundled_community
++        ? LoadLibraryExW(std::filesystem::u8path(library).c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
++        : LoadLibrary(lib_wstr);
+     }
+ #else
+     m_networking_module = dlopen(library.c_str(), RTLD_LAZY);
+@@ -328,6 +343,14 @@ void* BBLNetworkPlugin::get_source_module()
+     auto plugin_folder = data_dir_path / "plugins";
+ 
+ #if defined(_MSC_VER) || defined(_WIN32)
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    const auto bundled_source = community_bambu_library("BambuSource.dll");
++    if (!bundled_source.empty()) {
++        m_source_module = LoadLibraryExW(std::filesystem::u8path(bundled_source).c_str(), nullptr,
++            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++        return m_source_module;
++    }
++#endif
+     wchar_t lib_wstr[128];
+ 
+     library = plugin_folder.string() + "/" + std::string(BAMBU_SOURCE_LIBRARY) + ".dll";

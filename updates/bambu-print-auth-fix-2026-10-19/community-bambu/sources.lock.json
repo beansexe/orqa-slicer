@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "source": "https://github.com/persano/open-bamboo-networking.git",
+  "commit": "da9d91f530dd20b3d6cc19d18178914d9c651b75",
+  "reportedAbiVersion": "02.08.04.99",
+  "vcpkgCommit": "20ceb8adbf0504d4b0d5e4058a32f9d4fc896391",
+  "mosquittoCommit": "99fa50f30e325609394c324c8ff71cfbbe95d8ab",
+  "cjsonCommit": "acc76239bee01d8e9c858ae2cab296704e52d916",
+  "pthreads": "3.0.0#14:x64-windows-static-md",
+  "profileFolder": "orqa-community",
+  "defaultBackend": "standard",
+  "runtime": "MSVC-Release-MD",
+  "cloudOnly": true,
+  "systemRegistration": false
+}

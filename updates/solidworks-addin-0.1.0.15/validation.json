@@ -1,0 +1,17 @@
+{
+  "physicalPrintingTested": false,
+  "guiPreviewVerified": false,
+  "addinSha256": "215232C6F09C54A3D8B75383371818ED8F5CDCE92E78E7B4AB27B959F5C8F773",
+  "addinVersion": "0.1.0.15",
+  "installed": true,
+  "loadedInSolidWorks": true,
+  "activeDocumentPreserved": true,
+  "bridgeChecks": 24,
+  "nativeRevision": "0.1.0-dev.13",
+  "nativeBuildPassed": true,
+  "policyChecks": 12,
+  "thresholdCm3": 10,
+  "nativeRestartRequired": true,
+  "nativePublishedAndSelected": true,
+  "nativeDllSha256": "6ADFC4B4222BF9FC62F6A32FB0731E1D96B458BB60903AB841093823B1CCBDDF"
+}

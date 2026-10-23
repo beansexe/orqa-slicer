@@ -1,0 +1,18 @@
+{
+  "status": "saved-before-requested-shutdown",
+  "checkedAtUtc": "2026-10-10T09:44:37.5836077Z",
+  "primaryUsedPercent": 98,
+  "weeklyUsedPercent": 29,
+  "accountRevision": "0.1.0-dev.1",
+  "revisionStatus": "needs-testing-and-packaging",
+  "mainExecutableLinked": true,
+  "mainDllLinked": true,
+  "portableRevisionPublished": false,
+  "sourceSnapshot": "C:\\Users\\Calixte Work\\Documents\\ChatGPT\\Orqa Slicer build\\revisions\\0.1.0-dev.1-source",
+  "resumeCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\manage.ps1 Build -Jobs 8",
+  "cloudArchiveInspector": "draft-uncompiled-unchecked-untested",
+  "realAccountsTested": false,
+  "realPrintersTested": false,
+  "shutdownRequested": true,
+  "forceCloseApplications": false
+}

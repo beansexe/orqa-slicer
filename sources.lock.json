@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    { "name": "OrcaSlicer", "url": "https://github.com/OrcaSlicer/OrcaSlicer.git", "commit": "cd021162420c0f97f41b84cd8bd9b7adaa29134f" },
+    { "name": "Orca-Flashforge", "url": "https://github.com/FlashForge/Orca-Flashforge.git", "commit": "137288fa36f005194c72dd72998ca1f9b9223274" }
+  ]
+}

@@ -1,0 +1,21 @@
+upstream/
+versions/
+logs/
+artifacts/
+tools/
+*.user
+
+# Local runtime state and generated output never belong in source control.
+*.log
+*.lnk
+*.exe
+*.dll
+*.pdb
+*.obj
+*.lib
+*.ilk
+*.exp
+__pycache__/
+.env
+.env.*
+data_dir/

@@ -1,0 +1,277 @@
+diff --git a/include/obn/agent.hpp b/include/obn/agent.hpp
+index c0f9822..376911b 100644
+--- a/include/obn/agent.hpp
++++ b/include/obn/agent.hpp
+@@ -1,3 +1,4 @@
++#include "obn/orqa_workers.hpp"
+ #pragma once
+ 
+ #include <atomic>
+@@ -97,6 +98,7 @@ public:
+ 
+     explicit Agent(std::string log_dir);
+     ~Agent();
++    bool run_background(std::function<void()> work) { return background_.start(std::move(work)); }
+ 
+     Agent(const Agent&)            = delete;
+     Agent& operator=(const Agent&) = delete;
+@@ -466,6 +468,8 @@ public:
+     std::string cloud_user_id() const;
+ 
+ private:
++    orqa::BackgroundTasks background_;
++
+     // Scans an incoming MQTT report frame (LAN or cloud) for a
+     // security.app_cert_install success response and installs the returned
+     // printer_cert into the cert_store pubkey cache. Cheap substring
+diff --git a/src/abi_camera.cpp b/src/abi_camera.cpp
+index 10737c9..5df3ce8 100644
+--- a/src/abi_camera.cpp
++++ b/src/abi_camera.cpp
+@@ -146,6 +146,9 @@ OBN_ABI int bambu_network_get_camera_url(void* agent,
+     }
+ 
+     std::string lan_url = a->camera_url_for(serial);
++#ifdef ORQA_COMMUNITY_CLOUD_ONLY
++    lan_url.clear(); // Cloud-only build: no LAN probe or fallback.
++#endif
+     const bool cloud_usable = cloud_camera_usable(a);
+     // With LAN Only Liveview off the LAN URL still serves the file browser
+     // (CTRL :6000) but carries no video, so prefer_lan_over_tutk must not
+@@ -212,7 +215,7 @@ OBN_ABI int bambu_network_get_camera_url(void* agent,
+         deliver_camera_url(callback, serial, std::move(url), kind);
+     };
+     try {
+-        std::thread(std::move(work)).detach();
++        if (!a->run_background(std::move(work)) && callback) callback(std::string{});
+     } catch (const std::system_error& e) {
+         OBN_WARN("get_camera_url: thread spawn failed (%s)", e.what());
+         if (callback) callback(std::string{});
+diff --git a/src/agent.cpp b/src/agent.cpp
+index 05b4afe..4a2fb0e 100644
+--- a/src/agent.cpp
++++ b/src/agent.cpp
+@@ -104,6 +104,7 @@ Agent::Agent(std::string log_dir) : log_dir_(std::move(log_dir))
+ 
+ Agent::~Agent()
+ {
++    background_.close();
+     Agent* expected = this;
+     s_active_agent.compare_exchange_strong(expected, nullptr);
+     shutdown_lan_session();
+@@ -205,6 +206,9 @@ int Agent::connect_printer(std::string dev_id,
+                            std::string password,
+                            bool        use_ssl)
+ {
++#ifdef ORQA_COMMUNITY_CLOUD_ONLY
++    return BAMBU_NETWORK_ERR_CONNECT_FAILED;
++#endif
+     if (obn::config::current().mqtt_keep_connection) {
+         cancel_deferred_disconnect();
+         std::string reuse_dev_id;
+@@ -446,11 +450,11 @@ void Agent::autostart_lan_if_selected(const std::string& dev_id)
+     // connect_printer() does blocking work (TLS cert snapshot, MQTT connect);
+     // run it off the caller's thread (SSDP dispatch / HTTP / Studio UI).
+     try {
+-        std::thread([this, dev_id, ip, code]() {
++        background_.start([this, dev_id, ip, code]() {
+             ensure_lan_session(dev_id, ip, code);
+             std::lock_guard<std::mutex> lk(mu_);
+             lan_autostart_inflight_.erase(dev_id);
+-        }).detach();
++        });
+     } catch (const std::system_error& e) {
+         OBN_WARN("autostart_lan_if_selected: thread spawn failed (%s)", e.what());
+         std::lock_guard<std::mutex> lk(mu_);
+@@ -1470,7 +1474,7 @@ void Agent::rescue_cloud_project_file(const std::string& dev_id,
+ 
+     // Fire on background thread so we don't block the MQTT receive callback.
+     std::string dev_id_copy = dev_id;
+-    std::thread([this, dev_id_copy, req_json]() mutable {
++    background_.start([this, dev_id_copy, req_json]() mutable {
+         int rc = send_message(dev_id_copy, req_json, /*qos=*/0);
+         if (rc == BAMBU_NETWORK_SUCCESS) {
+             OBN_INFO("rescue_cloud_project_file dev=%s: signed project_file dispatched OK",
+@@ -1479,7 +1483,7 @@ void Agent::rescue_cloud_project_file(const std::string& dev_id,
+             OBN_WARN("rescue_cloud_project_file dev=%s: send_message failed rc=%d",
+                      dev_id_copy.c_str(), rc);
+         }
+-    }).detach();
++    });
+ }
+ 
+ void Agent::rescue_cloud_liveview(const std::string& dev_id,
+@@ -1546,7 +1550,7 @@ void Agent::rescue_cloud_liveview(const std::string& dev_id,
+     const std::string req_json = obn::json::Value(std::move(new_root)).dump();
+ 
+     std::string dev_id_copy = dev_id;
+-    std::thread([this, dev_id_copy, req_json]() mutable {
++    background_.start([this, dev_id_copy, req_json]() mutable {
+         int rc = send_message(dev_id_copy, req_json, /*qos=*/0);
+         if (rc == BAMBU_NETWORK_SUCCESS) {
+             OBN_INFO("rescue_cloud_liveview dev=%s: signed liveview prepare dispatched OK",
+@@ -1555,7 +1559,7 @@ void Agent::rescue_cloud_liveview(const std::string& dev_id,
+             OBN_WARN("rescue_cloud_liveview dev=%s: send_message failed rc=%d",
+                      dev_id_copy.c_str(), rc);
+         }
+-    }).detach();
++    });
+ }
+ 
+ int Agent::send_message_to_printer(const std::string& dev_id,
+@@ -2423,6 +2427,12 @@ void Agent::set_config_dir(std::string dir)
+         std::lock_guard<std::mutex> lk(mu_);
+         config_dir_ = std::move(dir);
+     }
++#ifdef ORQA_COMMUNITY_CLOUD_ONLY
++    {
++        std::lock_guard<std::mutex> lk(mu_);
++        config_dir_ = (std::filesystem::u8path(config_dir_) / "orqa-community").u8string();
++    }
++#endif
+     // Swap the auth store to a real on-disk file as soon as Studio
+     // tells us where to keep it. This runs during plugin init, before any
+     // user-facing ABI, but not necessarily once per agent: Orca installs its
+@@ -2690,7 +2700,7 @@ void Agent::ensure_app_cert_material_()
+             std::chrono::steady_clock::now() + std::chrono::seconds(60);
+     }
+     OBN_INFO("app-cert material missing/unusable; fetching shared credentials");
+-    std::thread([this] { (void)update_cert(); }).detach();
++    background_.start([this] { (void)update_cert(); });
+ }
+ 
+ bool Agent::app_cert_fetch_running()
+diff --git a/src/auth.cpp b/src/auth.cpp
+index 8897a9e..aca6869 100644
+--- a/src/auth.cpp
++++ b/src/auth.cpp
+@@ -1,3 +1,4 @@
++#include "obn/orqa_session.hpp"
+ #include "obn/auth.hpp"
+ 
+ #include "obn/json_lite.hpp"
+@@ -99,11 +100,14 @@ void Store::load_locked()
+ {
+     s_ = {};
+     if (path_.empty()) return;
+-    std::ifstream in(path_);
++    std::ifstream in(path_, std::ios::binary);
+     if (!in.good()) return;
+     std::string text((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+     if (text.empty()) return;
++#ifdef _WIN32
++    if (!obn::orqa::unprotect_session(text)) return;
++#endif
+     std::string err;
+     auto root = obn::json::parse(text, &err);
+     if (!root) {
+@@ -177,6 +181,9 @@ void Store::persist_locked() const
+         body += s_.firmware_beta_open ? "true" : "false";
+         body += "\n";
+         body += "}\n";
++#ifdef _WIN32
++        if (!obn::orqa::protect_session(body)) { out.close(); fs::remove(tmp, ec); return; }
++#endif
+         out.write(body.data(), static_cast<std::streamsize>(body.size()));
+         out.flush();
+         if (!out.good()) {
+diff --git a/src/cert_store.cpp b/src/cert_store.cpp
+index 458c41e..2da2c5d 100644
+--- a/src/cert_store.cpp
++++ b/src/cert_store.cpp
+@@ -232,7 +232,11 @@ bool capture_peer_cert_pem(const std::string& host,
+     // OpenSSL 3.0+ returns a reffed cert, which the caller must free. The 1.x
+     // equivalent (SSL_get_peer_certificate) is a macro for the same thing in
+     // modern headers.
++    #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+     X509* cert = ::SSL_get1_peer_certificate(ssl);
++#else
++    X509* cert = ::SSL_get_peer_certificate(ssl);
++#endif
+     bool  wrote = false;
+     if (cert) {
+         if (!ensure_parent_dir(out_pem_path)) {
+diff --git a/src/config.cpp b/src/config.cpp
+index 951cee3..9bae70f 100644
+--- a/src/config.cpp
++++ b/src/config.cpp
+@@ -363,6 +363,19 @@ Settings load_or_create(const std::string& config_dir)
+ 
+     g_config_dir = config_dir;
+     g_current = parse_file(path);
++#ifdef ORQA_COMMUNITY_CLOUD_ONLY
++    g_current.block_cloud = false;
++    g_current.cloud_print = CloudPrintMode::CloudOnly;
++    g_current.prefer_lan_over_tutk = false;
++    g_current.lan_tls_skip_verify = false;
++    g_current.filter_mqtt_hms_65543 = false;
++    g_current.log_level = "off";
++    g_current.log_to_file = "0";
++    g_current.log_stderr = "0";
++    g_current.bambusource_log_level = "off";
++    g_current.bambusource_log_to_file = "0";
++    g_current.bambusource_log_stderr = "0";
++#endif
+     obn::lan_tls::propagate_cross_so_env(g_current);
+     return g_current;
+ }
+diff --git a/src/ftps.cpp b/src/ftps.cpp
+index ede07d5..f2cb933 100644
+--- a/src/ftps.cpp
++++ b/src/ftps.cpp
+@@ -78,7 +78,11 @@ std::string openssl_last_error()
+ 
+ bool verify_peer_cn(SSL* ssl, const std::string& expected_cn, std::string& err)
+ {
++    #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+     X509* cert = SSL_get1_peer_certificate(ssl);
++#else
++    X509* cert = SSL_get_peer_certificate(ssl);
++#endif
+     if (!cert) {
+         err = "no peer certificate";
+         return false;
+diff --git a/src/http_client.cpp b/src/http_client.cpp
+index c44c1c0..5a29385 100644
+--- a/src/http_client.cpp
++++ b/src/http_client.cpp
+@@ -4,6 +4,11 @@
+ 
+ #include <curl/curl.h>
+ 
++#if defined(_WIN32) && defined(ORQA_COMMUNITY_CLOUD_ONLY)
++#include "obn/cloud_ca_bundle.hpp"
++#include "obn/orqa_https_trust.hpp"
++#endif
++
+ #include <atomic>
+ #include <cctype>
+ #include <cstdlib>
+@@ -252,6 +257,10 @@ Response perform(const Request& req)
+         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+     } else if (!req.ca_file.empty()) {
+         curl_easy_setopt(curl, CURLOPT_CAINFO, req.ca_file.c_str());
++#if defined(_WIN32) && defined(ORQA_COMMUNITY_CLOUD_ONLY)
++    } else {
++        obn::tls::configure_http_roots(curl, obn::tls::kCloudCaBundlePem);
++#endif
+     }
+ 
+     OBN_DEBUG("http %s %s (body=%zu)",
+diff --git a/src/tls_dial.cpp b/src/tls_dial.cpp
+index dd99794..379b4dd 100644
+--- a/src/tls_dial.cpp
++++ b/src/tls_dial.cpp
+@@ -128,7 +128,11 @@ SSL_CTX* make_verify_ctx(const char* ca_file, const char* peer_cert,
+ bool verify_peer_cn(SSL* ssl, const char* expected_cn)
+ {
+     if (!expected_cn || !*expected_cn) return false;
++    #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+     X509* cert = SSL_get1_peer_certificate(ssl);
++#else
++    X509* cert = SSL_get_peer_certificate(ssl);
++#endif
+     if (!cert) return false;
+     const int ok = X509_check_host(cert, expected_cn, std::strlen(expected_cn), 0, nullptr);
+     X509_free(cert);
