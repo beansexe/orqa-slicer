@@ -8,6 +8,9 @@ This is a development preview; live CAD and printer acceptance is still in progr
 
 ![Multi-print first actions in the development preview](docs/images/multi-print.jpg)
 
+For printer sign-in, Community Cloud, Multi-print and the add-in, use the
+[getting-started guide](docs/getting-started.md).
+
 ## Use your existing installation
 
 - Open **Launch-Slicer.cmd** to launch the selected version.
