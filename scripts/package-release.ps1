@@ -26,11 +26,21 @@ $stagingRoot = Join-Path $releases ('staging-' + [guid]::NewGuid().ToString('N')
 $stage = Join-Path $stagingRoot $name
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 Write-Host 'Copying the installed runtime into an isolated staging folder...'
+$binaryHashes = [ordered]@{}
+foreach ($binary in @('orca-slicer.exe','OrcaSlicer.dll')) {
+    $binaryHashes[$binary] = (Get-FileHash -LiteralPath (Join-Path $BuildFolder $binary)).Hash
+}
 # Copy only installed runtime files. Source/dependency archives and account state
 # are never collected by traversing the whole working directory.
 Get-ChildItem -LiteralPath $BuildFolder -Force | Where-Object {
     $_.Name -ne 'data_dir' -and $_.Extension -ne '.log'
 } | Copy-Item -Destination $stage -Recurse -Force
+foreach ($binary in $binaryHashes.Keys) {
+    if ((Get-FileHash -LiteralPath (Join-Path $stage $binary)).Hash -ne $binaryHashes[$binary] -or
+        (Get-FileHash -LiteralPath (Join-Path $BuildFolder $binary)).Hash -ne $binaryHashes[$binary]) {
+        throw 'The native build changed during packaging. Wait for the build to finish before retrying.'
+    }
+}
 foreach ($file in @('LICENSE.txt','NOTICE.md')) {
     Copy-Item -LiteralPath (Join-Path $taskRoot $file) -Destination $stage -Force
 }
@@ -65,7 +75,7 @@ Write-Host 'Saving the matching committed source...'
 if ($LASTEXITCODE -ne 0) { throw 'Cannot archive matching workspace source.' }
 $sourceLock = Get-Content -LiteralPath (Join-Path $taskRoot 'sources.lock.json') -Raw | ConvertFrom-Json
 @{version=$Version; revisionStatus='needs-testing'; workspaceCommit=$workspaceCommit;
-  upstreamSources=$sourceLock.sources; packagedAtUtc=[DateTime]::UtcNow.ToString('o') } |
+  upstreamSources=$sourceLock.sources; binaryHashes=$binaryHashes; packagedAtUtc=[DateTime]::UtcNow.ToString('o') } |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Encoding UTF8
 & (Join-Path $taskRoot 'manage.ps1') Verify -BuildFolder $stage
 # Only the installed runtime tree is copied above. Private state names are
