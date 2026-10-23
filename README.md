@@ -1,150 +1,128 @@
-# Orqa slicer consolidation workspace
+# Orqa Slicer
 
-Revision **0.1.0-dev.13** adds a **10 cm³ Fast Start print warning** to Orqa and
-SolidWorks add-in **0.1.0.16**. Cancel is the default; Print anyway continues once.
-Closing the add-in dialog returns focus to SolidWorks; a successful Load in slicer
-still switches to Orqa.
-Restart Orqa after saving the current project to activate the update. Live
-CAD/printing workflows still need user testing.
-Run **Install SolidWorks Add-in.cmd** once, accept the Windows administrator prompt,
-then enable **Orqa Print** in SolidWorks Tools → Add-ins. Part documents gain an
-**Orqa** ribbon tab with **Choose and print** and **Load in slicer**.
+A Windows slicer workspace combining Bambu and Flashforge printer accounts,
+cloud printing, a Multi-print workspace, and a SolidWorks **Orqa Print** add-in.
 
-The selectors read connected printers and compatible materials/processes from
-the running Orqa session, including **Current in Orca** for unsaved filament and
-process edits. STEP exports replace the same part/configuration's temporary file.
-Background Print currently supports one material/one extruder on an external
-spool; use Load in slicer for AMS or multiple extruders. Keep Orca running, signed
-in and optionally minimized. See [the workflow](docs/solidworks-workflow.md).
+Current local preview: **0.1.0-dev.13**. Current SolidWorks add-in: **0.1.0.16**.
+This is a development preview; live CAD and printer acceptance is still in progress.
 
-The underlying revision 11 features remain available:
-Close the running slicer, then use **OPEN SLICER** or Launch-Slicer.cmd. Settings
-and accounts use revision 1's shared folder. The prior Bambu backend choice is
-preserved. Revision 12 remains available for rollback.
+## Use your existing installation
 
-**Multi-print** is a visible toggle beside Slice/Print. It opens printer cards
-on the left of Prepare/Preview and defaults Print to **Print to all printers**.
-Add printers for a source plate, select a card, and use the normal process,
-filament and nozzle controls to customize that printer. Source objects remain
-shared; each printer gets its own validated slice. The first batch workflow
-opens each vendor's send confirmation to retain native AMS review.
+- Open **Launch-Slicer.cmd** to launch the selected version.
+- Open **Manage-Versions.cmd** to select a version, read its notes, or roll back.
+- Run **Install SolidWorks Add-in.cmd** to install the built add-in, then enable
+  **Orqa Print** in SolidWorks under **Tools → Add-ins**. See the
+  [SolidWorks workflow](docs/solidworks-workflow.md).
 
-Save Multi-print workspace writes a standard 3MF and companion printer-card
-file. Reopen the 3MF normally, then load its saved cards. Keep both files together.
-See docs/revisions/0.1.0-dev.11-user-tests.md for the short user checklist.
+Keep the existing `versions/` folder: it contains your builds and private settings.
+Pulling source changes from GitHub does not update an installed executable.
+Build and publish a new version when a source update is ready to use.
 
-Revision10's repaired Community Cloud sign-in and print authentication are
-included. X2D homing, live video and cloud printing were confirmed by the user.
-Flashforge cloud printing and pause/resume/cancel were confirmed previously.
-Multi-print itself and other Bambu models still require user testing. Delayed
-Flashforge bed readings remain unresolved.
+## Start from GitHub on a new PC
 
-Checks focus on compilation, source/packaging, relocated startup and internal
-callback handling. Development did not send jobs or control printers. Sources
-and dependencies are cached for incremental builds; no full ZIP download is needed.
-## Everyday use
+This repository contains source, patches, scripts and documentation. It excludes
+compiled applications, dependency caches, accounts, presets and vendor plug-ins.
+A fresh clone must be built before the launchers or add-in installer can be used.
 
-Open PowerShell here:
+Prerequisites: Windows x64, Git, Visual Studio C++ Build Tools with the Desktop
+C++ workload, and a Windows SDK. Upstream guidance calls for at least 16 GB RAM
+and 23 GB free disk; retaining multiple portable versions requires more space.
+
+Open PowerShell in the folder where you want the project:
 
 ```powershell
-.\manage.ps1 Status
+git clone https://github.com/beansexe/orqa-slicer.git
+cd orqa-slicer
 .\manage.ps1 Doctor
-# Download portable CMake, Perl, and the Python build bootstrap once if needed:
+.\manage.ps1 Setup
 .\scripts\setup-build-tools.ps1
-# Once only: install the C++ build prerequisites and build dependencies.
-# The upstream build script supports --install-vs buildtools; this installs system software.
 .\manage.ps1 BuildDeps
-# Repeat after code changes; reuses sources, dependencies, and build output.
 .\manage.ps1 Build
-.\manage.ps1 Publish -Version 0.1.0-dev.13 -SettingsVersion 0.1.0-dev.1
+.\manage.ps1 Publish -Version 0.1.0-dev.13
 .\manage.ps1 Use -Version 0.1.0-dev.13
 .\manage.ps1 Run
 ```
 
-After a build is published and selected, double-click `Launch-Slicer.cmd` to
-open it. The launcher follows the selected version, including after a rollback.
-Double-click `Manage-Versions.cmd` to choose, launch, or make a saved revision the
-default. It also opens that revision's testing notes. Published revisions are
-marked needs-testing until their account and printer behavior is verified.
+`Setup` retrieves the locked vendor baselines and preserves existing checkouts.
+`Build` applies the native patch, synchronizes integration sources and enables
+`ORCA_DUAL_VENDOR_ACCOUNTS`. Build commands default to four parallel jobs; use
+`-Jobs` to adjust for available memory. Portable CMake, Perl and the pinned Python
+bootstrap are installed into the excluded `tools/` directory.
 
-If PowerShell blocks the script, run it in a process-scoped invocation:
-`powershell -NoProfile -ExecutionPolicy Bypass -File .\manage.ps1 Status`.
-No machine-wide execution policy change is needed.
+If script execution is blocked, use a process-scoped invocation such as
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\manage.ps1 Doctor`.
 
-`Setup` reuses existing repositories. On a new machine it downloads the locked
-sources. `Fetch` downloads upstream changes incrementally without changing working
-files. Updating the baseline is a deliberate development step: inspect and merge
-the upstream changes, verify them, then update the lock. Never reset local edits.
+The optional Community Cloud backend has its own
+[build script](scripts/build-community-bambu.ps1),
+[source lock](integration/community/sources.lock.json) and
+[staging checks](scripts/stage-community-bambu.ps1). It requires the native slicer
+dependency build. The standard backend remains the default on a new setup.
+Flashforge requires a separately obtained compatible vendor networking plug-in
+and its `FLASHNETWORK9.DAT` file (ABI 3.3.6). Choose plugin in Printer accounts
+when automatic discovery is unavailable.
 
-`Publish` saves a complete local portable build under a version label. Use a
-previous label to roll back. Nothing needs to be downloaded for local version
-switching. Builds are never automatically deleted. Use a new version label for
-each publication and matching revision notes. `-BuildFolder` can select a
-different portable output folder matching the completed install manifest.
-Publishing checks all runtime/resource files before and after copying the build
-locally; this is not a binary delta updater for distributing installers.
+For the SolidWorks add-in, install SolidWorks with its API assemblies, then run
+`./scripts/build-solidworks.ps1` before using the add-in installer.
 
-Each published build has an isolated `data_dir` by default. To retain the current
-sign-ins and presets, `Publish -SettingsVersion 0.1.0-dev.1` makes the new build
-use that original revision's settings folder through `--datadir`. It does not
-copy credentials or settings. Keep the source revision's data_dir in place and
-close the running preview before launching another build with those settings.
-Use the workspace launcher or version manager for this reference to take effect;
-opening the new executable directly uses its separate settings folder. Both
-revisions share future account and preset changes, including after rollback.
-Existing installed vendor slicers retain their own settings.
+## Update, test and roll back
 
-The custom Build command synchronizes the account sources and enables
-`ORCA_DUAL_VENDOR_ACCOUNTS`. The upstream patches are preserved in
-`integration/native-ui.patch` so a fresh pinned checkout can reproduce the changes.
-It combines the native changes for all current features. The earlier three patch
-files are historical snapshots and are not applied by the current build script.
-The feature defaults off when building the upstream repository directly.
-Build and BuildDeps default to four parallel jobs. Pass `-Jobs 8` on a machine
-with sufficient CPU and memory, or reduce that number if other work needs resources.
-The pinned Python 3.12 bootstrap is selected only while building. It avoids
-incompatibilities between CPython's generation scripts and newer host interpreters.
-The build also enables Git long-path support for its child processes without
-changing the machine's Git or Windows configuration.
+Make changes on a branch, then run `./scripts/check.ps1`. GitHub Actions runs
+these same source-only checks on Windows; they do not contact printers or accounts
+and do not require the full slicer build. See [Contributing](CONTRIBUTING.md) for
+source layout, native patch capture and release checks.
 
-The preview adds **Printer accounts** to the top menu. Its Bambu controls use
-Orca's existing Bambu provider explicitly (not the Orca Cloud profile account).
-Flashforge uses a separate session and shows the account's printer list. On this
-Windows machine, it detects the installed Orca-Flashforge plugin. Elsewhere use
-Choose plugin to select the compatible library and its FLASHNETWORK9.DAT file.
-Only ABI 3.3.6 is accepted, matched to Flashforge's published 1.7.6 source.
-Flashforge wireless job submission is not connected by this account preview.
+After a successful native build, publish with a **new version label**:
 
-Compile the focused adapter tests without the whole slicer dependency tree:
-`tests\build-account-tests.cmd`. `artifacts\account-tests.exe` runs simulations;
-passing a plugin path probes its version; passing plugin and server-settings
-paths tests initialization only. None of those test modes attempts account login.
+```powershell
+# Example for an existing installation with revision 1's shared settings:
+.\manage.ps1 Publish -Version 0.1.0-dev.14 -SettingsVersion 0.1.0-dev.1
+.\manage.ps1 Use -Version 0.1.0-dev.14
+```
 
-## First integration milestone
+Use your actual new version label and release notes. `-SettingsVersion` must name
+an existing published revision with a `data_dir`; omit it on a fresh installation.
+It references that revision's settings rather than copying credentials. Keep the
+referenced folder and close the slicer before switching versions. Use the workspace
+launchers so the shared settings reference takes effect. Existing versions remain
+available for rollback; `Publish` will not overwrite a version.
 
-Keep Orca's Bambu networking flow and add Flashforge as a second provider, with
-independent login, refresh, logout, device list, and persisted session state.
-Signing out of one must leave the other signed in. A combined device picker must
-route jobs to the selected provider and its exact machine/nozzle profile. Target
-machines: Bambu X2D, X1 Carbon, H2S, and Flashforge Adventurer 5M.
+`./manage.ps1 Fetch` downloads upstream changes without merging or resetting local
+edits. Updating a baseline is a separate development step: inspect and merge the
+changes, verify the integration, then update the lock. Local `Publish` creates a
+portable version; it does not upload a GitHub release or provide automatic updates.
 
-See `docs/account-integration.md` for the source findings and acceptance checks.
-See `docs/first-sign-in.md` for the first-run account steps after a runnable
-preview has been published.
+## Features and current verification
 
-Official sources and build instructions:
-- https://github.com/OrcaSlicer/OrcaSlicer
-- https://github.com/FlashForge/Orca-Flashforge
-- https://github.com/OrcaSlicer/OrcaSlicer/wiki/how_to_build_windows
+| Feature | Current status |
+| --- | --- |
+| Bambu Community Cloud | X2D homing, live video and cloud printing confirmed by the user; other Bambu models still need testing. |
+| Flashforge cloud | Cloud printing and pause/resume/cancel confirmed previously; delayed bed temperature reporting remains unresolved. |
+| Multi-print | Shared source plate with per-printer cards, presets and validated slices; live batch workflow still needs user testing. |
+| SolidWorks bridge | Live printer/preset selection, STEP export and background single-material external-spool printing; live CAD/printing acceptance pending. Use Load in slicer for AMS or multiple extruders. |
+| Fast Start warning | At 10 cm³ or greater, model-based printing asks for explicit confirmation. Cancel is the default. Native and bridge policy checks pass; live acceptance pending. |
 
-The vendor repositories carry their own licenses. Changes derived from their
-AGPL code must preserve those terms. Vendor networking binaries have separate
-terms; this workspace does not redistribute them.
+The add-in's **Load in slicer** and **Choose and print** commands use the running
+Orqa session, including compatible unsaved material/process edits. Keep Orqa
+running and signed in. Add-in 16 restores SolidWorks focus when its chooser closes;
+a successful Load in slicer intentionally hands focus to Orqa.
 
+Multi-print workspaces save a standard 3MF and a companion printer-card file.
+Keep both together; reopen the 3MF and load its saved cards. Native send confirmation
+preserves vendor-specific AMS review. See the
+[Multi-print checklist](docs/revisions/0.1.0-dev.11-user-tests.md),
+[Fast Start notes](docs/revisions/0.1.0-dev.13.md) and
+[add-in 16 notes](docs/solidworks-addin-0.1.0.16.md).
 
+[Migration and release readiness](docs/github-migration.md) records verified work
+and remaining acceptance gates. Historical development notes describe their
+original revisions; they are not a claim that all hardware paths are validated.
 
+## Sources and notices
 
+- [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer)
+- [Orca-Flashforge](https://github.com/FlashForge/Orca-Flashforge)
+- [OrcaSlicer Windows build guide](https://github.com/OrcaSlicer/OrcaSlicer/wiki/how_to_build_windows)
 
-
-
-
+Preserve the upstream AGPL terms and dependency notices. Vendor networking
+binaries and SolidWorks API assemblies have separate terms and are not included
+in this source repository. See [LICENSE.txt](LICENSE.txt) and [NOTICE.md](NOTICE.md).

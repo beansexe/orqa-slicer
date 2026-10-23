@@ -7,6 +7,9 @@ if (!$SolidWorksDirectory) {
         Where-Object PSChildName -Match '^SOLIDWORKS 20\d\d$' | Sort-Object PSChildName -Descending | Select-Object -First 1
     if ($setup) { $SolidWorksDirectory = (Get-ItemProperty ($setup.PSPath + '\Setup')).'SolidWorks Folder' }
 }
+if (!$SolidWorksDirectory -or !(Test-Path -LiteralPath $SolidWorksDirectory -PathType Container)) {
+    throw 'SolidWorks was not found. Install SolidWorks with its API assemblies, or pass -SolidWorksDirectory with the installation folder.'
+}
 $redist = Join-Path $SolidWorksDirectory 'api/redist'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $output = Join-Path $taskRoot $OutputDirectory

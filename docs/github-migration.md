@@ -5,6 +5,12 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
 ## Migration evidence
 
 - The local workspace originally had no commits or remote.
+- Initial source commit `fca5da2567d17dc7bbd7c7b5327a20d0bd754f84` was
+  uploaded to `main`. The local branch tracks `origin/main`.
+- A fresh clone downloaded from GitHub passed scripts/check.ps1 without upstream
+  checkouts, vendor binaries, dependency caches, or account settings.
+- GitHub Actions [run 1](https://github.com/beansexe/orqa-slicer/actions/runs/40032450755)
+  completed successfully on Windows for the initial source commit.
 - The current native source matches the pinned OrcaSlicer baseline plus
   integration/native-ui.patch and 39 copied integration source files. Verified
   with scripts/verify-source-capture.ps1 on October 23, 2026.
@@ -17,8 +23,6 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
 
 ## Remaining acceptance gates
 
-- Upload and verify the initial source commit and remote branch.
-- Verify GitHub Actions against the uploaded commit.
 - Verify a fresh source checkout and complete native build, including optional
   community backend and the SolidWorks add-in where prerequisites are installed.
 - Audit release packaging from a fresh checkout: launchers, required runtime
