@@ -6,7 +6,7 @@ cloud printing, a Multi-print workspace, and a SolidWorks **Orqa Print** add-in.
 Current local preview: **0.1.0-dev.13**. Current SolidWorks add-in: **0.1.0.16**.
 This is a development preview; live CAD and printer acceptance is still in progress.
 
-![Multi-print first actions in the development preview](docs/images/multi-print.png)
+![Multi-print first actions in the development preview](docs/images/multi-print.jpg)
 
 ## Use your existing installation
 
