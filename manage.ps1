@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet('Status','Setup','Fetch','Doctor','ApplyIntegration','BuildDeps','Build','Publish','List','Use','Run')]
+    [ValidateSet('Status','Setup','Fetch','Doctor','ApplyIntegration','BuildDeps','Build','Verify','Publish','List','Use','Run')]
     [string]$Action = 'Status',
     [string]$Version,
     [string]$SettingsVersion,
@@ -187,6 +187,12 @@ switch ($Action) {
             $env:ORCA_SLICER_CMAKE_ARGS = "$previousArgs -DORCA_DUAL_VENDOR_ACCOUNTS=ON -DCMAKE_INSTALL_MESSAGE=LAZY"
             Invoke-Build '-s'
         } finally { $env:ORCA_SLICER_CMAKE_ARGS = $previousArgs }
+    }
+    'Verify' {
+        Assert-Source
+        if (!$BuildFolder) { $BuildFolder = Join-Path $sourceRoot 'build/OrcaSlicer' }
+        Assert-PortableBuild $BuildFolder
+        Write-Host 'Portable installation contains every required install-manifest file.'
     }
     'Publish' {
         Assert-Version

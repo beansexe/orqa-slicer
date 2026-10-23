@@ -91,6 +91,19 @@ edits. Updating a baseline is a separate development step: inspect and merge the
 changes, verify the integration, then update the lock. Local `Publish` creates a
 portable version; it does not upload a GitHub release or provide automatic updates.
 
+For distribution after building and committing the release source and notes:
+
+```powershell
+.\manage.ps1 Verify
+.\scripts\package-release.ps1 -Version 0.1.0-dev.14 -ReleaseNotes docs/revisions/0.1.0-dev.14.md
+```
+
+The package includes a portable launcher, an empty settings directory, release
+notes, matching workspace source and a SHA256 checksum. It is written under
+`artifacts/releases/` for inspection and upload; the staging folder is retained.
+It does not change your selected installation. Standalone packages use their own
+settings; keep your existing installation for rollback.
+
 ## Features and current verification
 
 | Feature | Current status |
