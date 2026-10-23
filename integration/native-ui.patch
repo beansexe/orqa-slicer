@@ -106,7 +106,7 @@ index de3b6956..8d738fe4 100644
  
  # Only BuildCommit.cpp includes the generated header, plus BaseException.cpp on
 diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
-index 756775a4..5c0a531e 100644
+index 756775a4..b7712c9b 100644
 --- a/src/slic3r/GUI/GUI_App.cpp
 +++ b/src/slic3r/GUI/GUI_App.cpp
 @@ -6,6 +6,11 @@
@@ -217,7 +217,28 @@ index 756775a4..5c0a531e 100644
  
      if (online_login && provider == ORCA_CLOUD_PROVIDER) {
          // The steps below run synchronously on the UI thread (cloud plugin fetch and
-@@ -6446,6 +6496,16 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
+@@ -6227,6 +6277,20 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
+ 
+ void GUI_App::check_new_version_sf(bool show_tips, int by_user)
+ {
++#ifdef ORCA_DUAL_VENDOR_ACCOUNTS
++    // Upstream installers replace this workspace's custom integrations. Keep
++    // automatic application checks quiet and send explicit checks to Orqa.
++    if (by_user != 0) {
++        CallAfter([this] {
++            wxMessageDialog dialog(mainframe,
++                _L("Check this project's GitHub releases for Orqa updates.\n\nOpen the releases page? Keep your existing installation and settings until the new version is tested."),
++                _L("Orqa updates"), wxYES_NO | wxNO_DEFAULT | wxICON_INFORMATION);
++            if (dialog.ShowModal() == wxID_YES)
++                wxLaunchDefaultBrowser("https://github.com/beansexe/orqa-slicer/releases");
++        });
++    }
++    return;
++#endif
+     AppConfig* app_config = wxGetApp().app_config;
+     bool       check_stable_only = app_config->get_bool("check_stable_update_only");
+     auto version_check_url = app_config->version_check_url();
+@@ -6446,6 +6510,16 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
              // once per connection episode.
              if (!m_show_error_msgdlg && !m_unsigned_plugin_warning_shown) {
                  m_unsigned_plugin_warning_shown = true;
@@ -234,7 +255,7 @@ index 756775a4..5c0a531e 100644
                  MessageDialog
                      msg_dlg(nullptr,
                              _L("To use OrcaSlicer with Bambu Lab printers, you need to enable LAN mode and Developer mode on your printer.\n\n"
-@@ -6455,6 +6515,7 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
+@@ -6455,6 +6529,7 @@ bool GUI_App::process_network_msg(std::string dev_id, std::string msg)
                                 "Developer mode allows the printer to work exclusively through local network access, "
                                 "enabling full functionality with OrcaSlicer."),
                              _L("Network Plug-in Restriction"), wxAPPLY | wxOK);
