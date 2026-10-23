@@ -11,6 +11,13 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
   checkouts, vendor binaries, dependency caches, or account settings.
 - GitHub Actions [run 1](https://github.com/beansexe/orqa-slicer/actions/runs/40032450755)
   completed successfully on Windows for the initial source commit.
+- The release-polish branch also passed GitHub Actions on commit
+  `85a1098fe816ccf456f9bdf0c94c2972ad36af2e`
+  ([run 5](https://github.com/beansexe/orqa-slicer/actions/runs/40032840606)).
+- The existing native Release build completed successfully. Every required
+  portable install-manifest path exists. The Windows executable's help-mode
+  process exited with code 0 when explicitly awaited.
+- SolidWorks add-in 0.1.0.16 rebuilt successfully into a separate artifact folder.
 - The current native source matches the pinned OrcaSlicer baseline plus
   integration/native-ui.patch and 39 copied integration source files. Verified
   with scripts/verify-source-capture.ps1 on October 23, 2026.
@@ -23,7 +30,8 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
 
 ## Remaining acceptance gates
 
-- Verify a fresh source checkout and complete native build, including optional
+- Complete the independent native build from reconstructed pinned source (running
+  with the existing dependency cache), including optional
   community backend and the SolidWorks add-in where prerequisites are installed.
 - Audit release packaging from a fresh checkout: launchers, required runtime
   files, add-in installation, version selection, rollback and settings retention.
