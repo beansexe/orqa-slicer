@@ -22,8 +22,10 @@ New-Item -ItemType Directory -Force -Path $releases | Out-Null
 $name = "Orqa-$Version-Windows-x64"
 $archive = Join-Path $releases ($name + '.zip')
 if (Test-Path -LiteralPath $archive) { throw 'This release archive already exists. Use a new version label.' }
-$stage = Join-Path $releases ($name + '-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $stage | Out-Null
+$stagingRoot = Join-Path $releases ('staging-' + [guid]::NewGuid().ToString('N'))
+$stage = Join-Path $stagingRoot $name
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
+Write-Host 'Copying the installed runtime into an isolated staging folder...'
 # Copy only installed runtime files. Source/dependency archives and account state
 # are never collected by traversing the whole working directory.
 Get-ChildItem -LiteralPath $BuildFolder -Force | Where-Object {
@@ -58,6 +60,7 @@ The SolidWorks add-in is built separately on a PC with SolidWorks installed.
 The matching workspace source and build instructions are in revision-source.zip.
 '@ | Set-Content -LiteralPath (Join-Path $stage 'START-HERE.md') -Encoding UTF8
 $sourceArchive = Join-Path $stage 'revision-source.zip'
+Write-Host 'Saving the matching committed source...'
 & git -C $taskRoot archive --format=zip "--output=$sourceArchive" $workspaceCommit
 if ($LASTEXITCODE -ne 0) { throw 'Cannot archive matching workspace source.' }
 $sourceLock = Get-Content -LiteralPath (Join-Path $taskRoot 'sources.lock.json') -Raw | ConvertFrom-Json
@@ -73,8 +76,17 @@ $privateFiles = @(Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Objec
 })
 if ($privateFiles.Count) { throw 'Release contains runtime state or logs. Review the staging folder before retrying.' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($stage, $archive, [IO.Compression.CompressionLevel]::Optimal, $true)
-$sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+$partialArchive = Join-Path $releases ($name + '.partial-' + [guid]::NewGuid().ToString('N') + '.zip')
+Write-Host 'Compressing the portable package...'
+[IO.Compression.ZipFile]::CreateFromDirectory($stage, $partialArchive, [IO.Compression.CompressionLevel]::Optimal, $true)
+$zip = [IO.Compression.ZipFile]::OpenRead($partialArchive)
+try {
+    foreach ($required in @('START ORQA.cmd','START-HERE.md','RELEASE-NOTES.md','BUILD-INFO.json','revision-source.zip','orca-slicer.exe','OrcaSlicer.dll','data_dir/')) {
+        if ($null -eq $zip.GetEntry($name + '/' + $required)) { throw "Archive is missing $required." }
+    }
+} finally { $zip.Dispose() }
+$sha = (Get-FileHash -LiteralPath $partialArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+Move-Item -LiteralPath $partialArchive -Destination $archive
 "$sha  $name.zip" | Set-Content -LiteralPath ($archive + '.sha256') -Encoding ASCII
 Write-Host "Packaged: $archive"
 Write-Host "SHA256: $sha"
