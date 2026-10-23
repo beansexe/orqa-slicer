@@ -14,5 +14,6 @@ try {
     }
     & (Join-Path $taskRoot 'tests/build-solidworks-tests.ps1')
     & (Join-Path $taskRoot 'tests/check-manager-settings.ps1')
+    & (Join-Path $taskRoot 'tests/check-launchers.ps1')
     Write-Host 'All source-only checks passed. Hardware acceptance is separate.'
 } finally { Pop-Location }

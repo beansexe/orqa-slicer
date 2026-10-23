@@ -77,20 +77,22 @@ public:
         title->SetFont(title->GetFont().Bold());
         layout->Add(title, 0, wxALL, FromDIP(10));
         auto* help = new wxStaticText(this, wxID_ANY,
-            _L("Add a printer for the current plate. Select a card to edit its printer, filament and process settings using the usual controls. Objects remain shared."));
+            _L("Add printers to this plate. Select a card to edit its settings using the usual controls."));
         help->Wrap(FromDIP(245));
         layout->Add(help, 0, wxLEFT | wxRIGHT | wxBOTTOM, FromDIP(10));
-        m_cards = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(260, 200)), 0, nullptr, wxLB_SINGLE | wxLB_HSCROLL);
+        // Keep the first action visible even when this dock shares the left
+        // sidebar with the preset controls on a smaller display.
+        add_button(layout, _L("+ Add printer to plate"), [this] { add_target(); });
+        add_button(layout, _L("Load saved printer cards…"), [this] { load_cards(); });
+        m_cards = new wxListBox(this, wxID_ANY, wxDefaultPosition, FromDIP(wxSize(260, 120)), 0, nullptr, wxLB_SINGLE | wxLB_HSCROLL);
         layout->Add(m_cards, 1, wxEXPAND | wxALL, FromDIP(8));
         m_note = new wxStaticText(this, wxID_ANY, _L("Choose the source plate, then add its first printer."));
         m_note->Wrap(FromDIP(245));
         layout->Add(m_note, 0, wxEXPAND | wxALL, FromDIP(10));
-        add_button(layout, _L("+ Add printer / plate"), [this] { add_target(); });
         add_button(layout, _L("Remove selected card"), [this] { remove_target(); });
         add_button(layout, _L("Slice selected printer"), [this] { run_batch(true); });
         add_button(layout, _L("Print to all printers"), [this] { run_batch(); });
         add_button(layout, _L("Save Multi-print workspace…"), [this] { save_workspace(); });
-        add_button(layout, _L("Load saved printer cards…"), [this] { load_cards(); });
         auto* footer = new wxStaticText(this, wxID_ANY,
             _L("Each printer is sliced separately. The batch opens each vendor's send confirmation. Check the printer and AMS mapping before sending."));
         footer->Wrap(FromDIP(245));
