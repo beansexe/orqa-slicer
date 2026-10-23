@@ -221,7 +221,8 @@ switch ($Action) {
         $revisionSource = Join-Path $destination 'revision-source'
         New-Item -ItemType Directory $revisionSource | Out-Null
         foreach ($entry in @('integration','scripts','tests','docs','solidworks','Install SolidWorks Add-in.cmd','sources.lock.json',
-                              'build-tools.lock.json','manage.ps1','README.md','Launch-Slicer.cmd','Manage-Versions.cmd')) {
+                              'build-tools.lock.json','manage.ps1','README.md','Launch-Slicer.cmd','Manage-Versions.cmd',
+                              'LICENSE.txt','NOTICE.md','CONTRIBUTING.md')) {
             Copy-Item -LiteralPath (Join-Path $taskRoot $entry) -Destination $revisionSource -Recurse
         }
         if ($RevisionNotes) {
