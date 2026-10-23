@@ -18,6 +18,15 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
   portable install-manifest path exists. The Windows executable's help-mode
   process exited with code 0 when explicitly awaited.
 - SolidWorks add-in 0.1.0.16 rebuilt successfully into a separate artifact folder.
+- Source-only launcher checks now cover fresh Git checkouts nested inside another
+  installation, installed workspaces, saved source snapshots and the empty revision
+  chooser. These passed locally and in GitHub Actions.
+- The Multi-print first actions were visually verified in a separate account-free
+  1190×795 preview. Add printer and Load saved cards are visible above the list.
+  The native layout build succeeded. The original selected installation remains
+  available; the separate preview was closed after inspection.
+- Community backend patch application and all three helper hashes match the
+  working backend. No additional modified tracked file is outside that patch.
 - The current native source matches the pinned OrcaSlicer baseline plus
   integration/native-ui.patch and 39 copied integration source files. Verified
   with scripts/verify-source-capture.ps1 on October 23, 2026.
@@ -40,6 +49,11 @@ Repository: https://github.com/beansexe/orqa-slicer (private).
 - Preserve existing hardware evidence and obtain missing user checks for live
   CAD/printing workflows. Multi-print, additional Bambu models and the delayed
   Flashforge bed reading must retain accurate status in release notes.
+
+The update-routing correction is being compiled. An intermediate portable package
+started before that correction is superseded and must not be uploaded as the final
+release. Final packaging must run after the last native build completes, then be
+extracted and inspected before uploading.
 
 The repository migration does not itself prove a polished release. Do not label
 the product release-ready based only on source checks or an uploaded commit.
