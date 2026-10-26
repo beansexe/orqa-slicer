@@ -43,8 +43,8 @@ cd orqa-slicer
 .\scripts\setup-build-tools.ps1
 .\manage.ps1 BuildDeps
 .\manage.ps1 Build
-.\manage.ps1 Publish -Version 0.1.0-dev.13
-.\manage.ps1 Use -Version 0.1.0-dev.13
+.\manage.ps1 Publish -Version 0.1.0-dev.14
+.\manage.ps1 Use -Version 0.1.0-dev.14
 .\manage.ps1 Run
 ```
 

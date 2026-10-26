@@ -54,7 +54,7 @@ SHA256:
   hashes match revision 13's existing components. Independently rebuilt community
   DLLs passed the same ABI/lifecycle check.
 - ZIP and checksum uploads were verified against GitHub's reported SHA256 values.
-  A companion getting-started guide is attached to the draft release.
+  A companion getting-started guide is attached to the published release.
 
 ## Live acceptance and existing preview limits
 
@@ -68,3 +68,9 @@ The remaining user checks are collected in
 CAD chooser/focus/handoff, per-printer settings and saved workspaces, and optional
 physical regression testing. Release 14 remains a needs-testing preview until
 that live acceptance is recorded.
+
+## Published delivery
+
+[Preview 14](https://github.com/beansexe/orqa-slicer/releases/tag/v0.1.0-dev.14) is published as a private prerelease. [PR 1](https://github.com/beansexe/orqa-slicer/pull/1) is merged, and its post-merge Windows checks passed. The release tag points to merge commit a67b8cfb28c7489e3659ae724b71c279571cd6f6; native code and build inputs match the audited workspace snapshot above.
+
+Revision 14 is also available in the local version manager with settingsVersion 0.1.0-dev.1. Revision 13 remains selected. Save and close the running slicer before launching another revision with shared settings.
