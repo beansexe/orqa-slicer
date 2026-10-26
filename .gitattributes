@@ -1,5 +1,6 @@
 * text=auto
-*.patch text eol=lf
+# Blank context lines in unified patches carry a required space marker.
+*.patch text eol=lf whitespace=-blank-at-eol
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.sh text eol=lf

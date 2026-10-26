@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet('Status','Setup','Fetch','Doctor','ApplyIntegration','BuildDeps','Build','Publish','List','Use','Run')]
+    [ValidateSet('Status','Setup','Fetch','Doctor','ApplyIntegration','BuildDeps','Build','Verify','Publish','List','Use','Run')]
     [string]$Action = 'Status',
     [string]$Version,
     [string]$SettingsVersion,
@@ -188,6 +188,12 @@ switch ($Action) {
             Invoke-Build '-s'
         } finally { $env:ORCA_SLICER_CMAKE_ARGS = $previousArgs }
     }
+    'Verify' {
+        Assert-Source
+        if (!$BuildFolder) { $BuildFolder = Join-Path $sourceRoot 'build/OrcaSlicer' }
+        Assert-PortableBuild $BuildFolder
+        Write-Host 'Portable installation contains every required install-manifest file.'
+    }
     'Publish' {
         Assert-Version
         if ($PSBoundParameters.ContainsKey('SettingsVersion')) {
@@ -221,7 +227,8 @@ switch ($Action) {
         $revisionSource = Join-Path $destination 'revision-source'
         New-Item -ItemType Directory $revisionSource | Out-Null
         foreach ($entry in @('integration','scripts','tests','docs','solidworks','Install SolidWorks Add-in.cmd','sources.lock.json',
-                              'build-tools.lock.json','manage.ps1','README.md','Launch-Slicer.cmd','Manage-Versions.cmd')) {
+                              'build-tools.lock.json','manage.ps1','README.md','Launch-Slicer.cmd','Manage-Versions.cmd',
+                              'LICENSE.txt','NOTICE.md','CONTRIBUTING.md')) {
             Copy-Item -LiteralPath (Join-Path $taskRoot $entry) -Destination $revisionSource -Recurse
         }
         if ($RevisionNotes) {

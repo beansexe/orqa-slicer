@@ -1,5 +1,8 @@
 # Development status
 
+
+> Current GitHub delivery: preview 0.1.0-dev.14 and add-in 0.1.0.16. See [the current migration and verification record](github-migration.md), [first-run guide](getting-started.md), and [live acceptance checklist](release-acceptance.md). The dated checkpoints below are historical; they do not change the current selected installation.
+
 The user authorized continued development on October 10, 2026: finish and publish
 the account milestone as a revision that needs testing, then proceed with later
 features using that interface as the development baseline. Real validation remains

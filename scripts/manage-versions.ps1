@@ -11,7 +11,8 @@ $cursor = $taskRoot
 while ($cursor) {
     if ((Test-Path -LiteralPath (Join-Path $cursor 'manage.ps1')) -and
         (Test-Path -LiteralPath (Join-Path $cursor 'sources.lock.json')) -and
-        (Test-Path -LiteralPath (Join-Path $cursor 'versions/selected.json'))) {
+        ((Test-Path -LiteralPath (Join-Path $cursor 'versions/selected.json')) -or
+         (Test-Path -LiteralPath (Join-Path $cursor '.git')))) {
         $taskRoot = $cursor
         break
     }
