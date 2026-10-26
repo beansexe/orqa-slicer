@@ -1,5 +1,8 @@
 # Consolidated product milestones
 
+
+> Current GitHub delivery: preview 0.1.0-dev.14 and add-in 0.1.0.16. See [the current migration and verification record](github-migration.md), [first-run guide](getting-started.md), and [live acceptance checklist](release-acceptance.md). The dated checkpoints below are historical; they do not change the current selected installation.
+
 The user requested larger feature batches on October 15, 2026, to reduce the
 number of handoffs and conserve credits. Revision 10 is the selected test
 build; revision 9 remains available for rollback. Do not publish a new revision merely for a message or small cosmetic fix;

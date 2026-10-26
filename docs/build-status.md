@@ -1,5 +1,8 @@
 # Build checkpoint
 
+
+> Current GitHub delivery: preview 0.1.0-dev.14 and add-in 0.1.0.16. See [the current migration and verification record](github-migration.md), [first-run guide](getting-started.md), and [live acceptance checklist](release-acceptance.md). The dated checkpoints below are historical; they do not change the current selected installation.
+
 Revision **0.1.0-dev.10** is published and selected as **needs testing**. Native
 Release build/install, source and package matching, fresh integration patch
 reproduction, CLI/Python startup and the ten-revision chooser passed. The optional
